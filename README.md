@@ -67,6 +67,17 @@ To regenerate golden data: `cd harness && node trace3.mjs <seed> <human> <diffic
 * The original renderer/audio — the LiveView UI is our own (server-rendered
   SVG, no client game code).
 
+## Deployment
+
+Production runs the CI-built container on `hexempire-1` behind
+`hexempire.call-cc.be`. Deploys are **pull-based**: a systemd timer on the
+server (`hexempire-deploy.timer`, every 5 min) compares the running container's
+image digest against `ghcr.io/m1dnight/hexempire:latest` and recreates the
+container when CI has shipped something new — so a push to `main` is live
+within ~10 minutes of the tests passing. Config lives in `/etc/hexempire.env`
+(stable `SECRET_KEY_BASE` — sessions survive deploys); campaigns and matches
+live in the `hexempire_saves` volume and survive container replacement.
+
 ## Multiplayer
 
 Click **Create multiplayer match** on the home page and share the `/m/<code>`
