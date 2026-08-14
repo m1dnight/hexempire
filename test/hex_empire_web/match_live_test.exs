@@ -47,7 +47,11 @@ defmodule HexEmpireWeb.MatchLiveTest do
     # host (browser A) claims Redosia
     {:ok, host, _} = live(session_conn(conn, "browser-a"), "/m/#{id}")
     render_click(host, "claim", %{"party" => "0"})
-    assert render(host) =~ "Your personal rejoin link"
+    html = render(host)
+    assert html =~ "Your personal rejoin link"
+    # share + rejoin links render as full copy-pasteable URLs
+    assert html =~ ~r{http://www\.example\.com/m/#{id}\?seat=}
+    assert html =~ "http://www.example.com/m/#{id}"
 
     # guest (browser B) claims Bluegaria
     {:ok, guest, _} = live(session_conn(conn, "browser-b"), "/m/#{id}")

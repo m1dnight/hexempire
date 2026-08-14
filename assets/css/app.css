@@ -148,3 +148,6 @@ select.he-sel { background:#3a5233; color:#eef2e6; border:none; border-radius:6p
              font-family: ui-sans-serif, system-ui, sans-serif; }
 .he-code { display:block; margin-top:6px; padding:6px 8px; background:#0005; border-radius:6px;
            font-size:12px; word-break:break-all; color:#ffe99c; }
+.he-code { cursor: pointer; }
+.he-code.he-copied { background:#2e5a2e; color:#c8f7c8; }
+.he-code.he-copied::after { content: "  copied!"; font-weight: 700; }

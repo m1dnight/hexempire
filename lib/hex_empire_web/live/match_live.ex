@@ -38,10 +38,21 @@ defmodule HexEmpireWeb.MatchLive do
            player_id: player_id,
            token: token,
            party: party,
+           base_url: base_url(socket),
            selected: nil,
            valid_moves: []
          )
          |> assign_board()}
+    end
+  end
+
+  # The absolute URL prefix as the visitor sees it (proxy hostname, LAN IP,
+  # tunnel, ...), so shared links are copy-pasteable full URLs. Falls back to
+  # the endpoint's configured URL.
+  defp base_url(socket) do
+    case socket.host_uri do
+      %URI{} = uri -> uri |> URI.to_string() |> String.trim_trailing("/")
+      _ -> HexEmpireWeb.Endpoint.url()
     end
   end
 
@@ -183,7 +194,27 @@ defmodule HexEmpireWeb.MatchLive do
     end
   end
 
-  defp personal_link(id, token), do: "/m/#{id}?seat=#{token}"
+  defp match_url(base_url, id), do: "#{base_url}/m/#{id}"
+  defp personal_url(base_url, id, token), do: "#{base_url}/m/#{id}?seat=#{token}"
+
+  # A full URL with a tap-to-copy affordance (inline clipboard JS — no hook
+  # needed; falls back gracefully where the Clipboard API is unavailable).
+  attr :url, :string, required: true
+  attr :label, :string, required: true
+
+  defp copy_link(assigns) do
+    ~H"""
+    <div class="he-sub">{@label}</div>
+    <code
+      class="he-code"
+      title="Click to copy"
+      onclick="navigator.clipboard && navigator.clipboard.writeText(this.dataset.url).then(() => { this.classList.add('he-copied'); setTimeout(() => this.classList.remove('he-copied'), 1200); })"
+      data-url={@url}
+    >
+      {@url}
+    </code>
+    """
+  end
 
   # =========================================================================
   # Render
@@ -210,7 +241,10 @@ defmodule HexEmpireWeb.MatchLive do
       <div class="he-card" style="min-width:340px;max-width:440px">
         <div class="he-title">HEX EMPIRE — Match {@match.id}</div>
         <div class="he-sub" style="margin-bottom:10px">
-          Share this page's link to invite players. Unclaimed factions play as computers.
+          Send this link to invite players — unclaimed factions play as computers.
+        </div>
+        <div style="margin-bottom:10px">
+          <.copy_link url={match_url(@base_url, @id)} label="Invite link (click to copy):" />
         </div>
 
         <div :for={{party, seat} <- Enum.sort(@match.seats)} class="he-pl">
@@ -232,8 +266,10 @@ defmodule HexEmpireWeb.MatchLive do
         </div>
 
         <div :if={@party != nil} class="he-card" style="background:#22301c;margin-top:8px">
-          <div class="he-sub">Your personal rejoin link (works on any device):</div>
-          <code class="he-code">{personal_link(@id, @token)}</code>
+          <.copy_link
+            url={personal_url(@base_url, @id, @token)}
+            label="Your personal rejoin link (works on any device):"
+          />
         </div>
 
         <button
@@ -315,9 +351,14 @@ defmodule HexEmpireWeb.MatchLive do
           </div>
         </div>
 
-        <div :if={@party != nil} class="he-card">
-          <div class="he-sub">Your rejoin link (bookmark it to play from anywhere):</div>
-          <code class="he-code">{personal_link(@id, @token)}</code>
+        <div class="he-card">
+          <.copy_link url={match_url(@base_url, @id)} label="Spectate/share link (click to copy):" />
+          <div :if={@party != nil} style="margin-top:8px">
+            <.copy_link
+              url={personal_url(@base_url, @id, @token)}
+              label="Your rejoin link (bookmark it to play from anywhere):"
+            />
+          </div>
         </div>
       </div>
     </div>
