@@ -58,10 +58,26 @@ defmodule HexEmpireWeb.BoardComponents do
   attr :hexes, :list, required: true
   attr :viewer, :integer, default: nil, doc: "party whose moved armies render dimmed"
 
-  @doc "The complete SVG game board."
+  @doc """
+  The complete SVG game board, wrapped in the BoardZoom hook (pinch-zoom,
+  drag-pan, wheel zoom, double-tap zoom — see assets/js/board_zoom.js).
+  """
   def board(assigns) do
     assigns = assign(assigns, vb_w: viewbox_w(), vb_h: viewbox_h())
 
+    ~H"""
+    <div id="board-zoom" phx-hook="BoardZoom" class="he-zoom">
+      <.board_svg hexes={@hexes} viewer={@viewer} vb_w={@vb_w} vb_h={@vb_h} />
+    </div>
+    """
+  end
+
+  attr :hexes, :list, required: true
+  attr :viewer, :integer, default: nil
+  attr :vb_w, :any, required: true
+  attr :vb_h, :any, required: true
+
+  defp board_svg(assigns) do
     ~H"""
     <svg viewBox={"0 0 #{@vb_w} #{@vb_h}"} class="he-svg" preserveAspectRatio="xMidYMid meet">
       <g :for={hx <- @hexes}>
