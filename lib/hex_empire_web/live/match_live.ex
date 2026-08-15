@@ -12,7 +12,8 @@ defmodule HexEmpireWeb.MatchLive do
 
   use HexEmpireWeb, :live_view
 
-  import HexEmpireWeb.BoardComponents, only: [board: 1, build_hexes: 4, faction: 1]
+  import HexEmpireWeb.BoardComponents,
+    only: [board: 1, build_hexes: 4, faction: 1, action_bar: 1]
 
   alias HexEmpire.{Engine, Matches}
   alias HexEmpire.Matches.Match
@@ -298,6 +299,13 @@ defmodule HexEmpireWeb.MatchLive do
       <div class="he-board">
         <.board hexes={@hexes} viewer={@party} />
       </div>
+
+      <.action_bar
+        status={turn_banner(@match, @party)}
+        moves={if my_turn?(@match, @party), do: @match.game.actions}
+        can_end_turn={my_turn?(@match, @party)}
+        show_button={@party != nil}
+      />
 
       <div class="he-side">
         <div class="he-card">

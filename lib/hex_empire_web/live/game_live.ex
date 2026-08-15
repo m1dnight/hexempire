@@ -16,7 +16,8 @@ defmodule HexEmpireWeb.GameLive do
 
   use HexEmpireWeb, :live_view
 
-  import HexEmpireWeb.BoardComponents, only: [board: 1, build_hexes: 4, faction: 1]
+  import HexEmpireWeb.BoardComponents,
+    only: [board: 1, build_hexes: 4, faction: 1, action_bar: 1]
 
   alias HexEmpire.{Campaigns, Engine}
 
@@ -278,6 +279,12 @@ defmodule HexEmpireWeb.GameLive do
       <div class="he-board">
         <.board hexes={@hexes} viewer={@game.human} />
       </div>
+
+      <.action_bar
+        status={@status_msg}
+        moves={if human_turn?(@game), do: @game.actions}
+        can_end_turn={human_turn?(@game)}
+      />
 
       <div class="he-side">
         <div class="he-card">

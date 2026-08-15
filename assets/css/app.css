@@ -155,3 +155,16 @@ select.he-sel { background:#3a5233; color:#eef2e6; border:none; border-radius:6p
 /* Board zoom container (BoardZoom hook owns touch handling inside it) */
 .he-zoom { width:100%; height:100%; display:flex; align-items:center; justify-content:center;
            overflow:hidden; user-select:none; -webkit-user-select:none; }
+
+/* Mobile sticky action bar: hidden on desktop, thumb-reach fixed bar on phones */
+.he-actionbar { display:none; }
+@media (max-width: 900px) {
+  .he-actionbar { position:fixed; left:0; right:0; bottom:0; z-index:30;
+                  display:flex; align-items:center; gap:10px;
+                  padding:10px 14px calc(10px + env(safe-area-inset-bottom));
+                  background:#24361fee; backdrop-filter: blur(6px);
+                  border-top:1px solid #0006; }
+  .he-actionbar-status { flex:1; min-width:0; }
+  /* keep scrolled content visible above the bar */
+  .he-root { padding-bottom:84px; }
+}

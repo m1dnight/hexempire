@@ -121,6 +121,35 @@ defmodule HexEmpireWeb.BoardComponents do
   @doc "Faction metadata by party id."
   def faction(party), do: Enum.at(Engine.factions(), party)
 
+  attr :status, :string, required: true
+  attr :moves, :integer, default: nil, doc: "moves left, shown when it's the viewer's turn"
+  attr :can_end_turn, :boolean, default: false
+  attr :show_button, :boolean, default: true
+
+  @doc """
+  Bottom-fixed action bar for small screens (hidden on desktop via CSS):
+  the turn status, remaining moves, and End Turn always within thumb reach.
+  """
+  def action_bar(assigns) do
+    ~H"""
+    <div class="he-actionbar">
+      <div class="he-actionbar-status">
+        <div class="he-status">{@status}</div>
+        <div :if={@moves != nil} class="he-sub">Moves left: {@moves}</div>
+      </div>
+      <button
+        :if={@show_button}
+        class="he-btn primary"
+        style="width:auto;flex:none"
+        phx-click="end_turn"
+        disabled={not @can_end_turn}
+      >
+        End Turn
+      </button>
+    </div>
+    """
+  end
+
   # ---------------------------------------------------------------------------
   # Geometry
   # ---------------------------------------------------------------------------
