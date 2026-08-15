@@ -168,3 +168,25 @@ select.he-sel { background:#3a5233; color:#eef2e6; border:none; border-radius:6p
   /* keep scrolled content visible above the bar */
   .he-root { padding-bottom:84px; }
 }
+
+/* Touch polish */
+.he-btn, .he-sel, .he-code, .he-pl button { touch-action: manipulation; }
+.he-btn { min-height: 44px; }
+
+@media (max-width: 900px) {
+  /* compact faction rows: tighter, smaller bars */
+  .he-pl { margin: 3px 0; padding: 4px 6px; }
+  .he-bar { width: 46px; }
+  .he-card { padding: 10px; }
+  .he-root { padding-left: max(12px, env(safe-area-inset-left));
+             padding-right: max(12px, env(safe-area-inset-right)); }
+}
+
+/* Rotated phones: side-by-side again with a narrow sidebar so the board
+   gets the full height instead of the stacked portrait layout */
+@media (max-width: 1000px) and (orientation: landscape) and (max-height: 500px) {
+  .he-root { flex-direction: row; height: 100vh; padding-bottom: 12px; }
+  .he-board { min-height: 0; }
+  .he-side { width: 230px; overflow-y: auto; }
+  .he-actionbar { left: auto; width: 230px; right: max(0px, env(safe-area-inset-right)); }
+}
