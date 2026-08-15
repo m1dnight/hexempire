@@ -138,7 +138,7 @@
 select.he-sel { background:#3a5233; color:#eef2e6; border:none; border-radius:6px; padding:6px; font-size:13px; width:100%; }
 @media (max-width: 900px) {
   .he-root { flex-direction:column; height:auto; min-height:100vh; }
-  .he-board { min-height:52vh; }
+  .he-board { flex:0 0 56vh; height:56vh; min-height:0; }
   .he-side { width:auto; }
 }
 
@@ -153,8 +153,9 @@ select.he-sel { background:#3a5233; color:#eef2e6; border:none; border-radius:6p
 .he-code.he-copied::after { content: "  copied!"; font-weight: 700; }
 
 /* Board zoom container (BoardZoom hook owns touch handling inside it) */
-.he-zoom { width:100%; height:100%; display:flex; align-items:center; justify-content:center;
-           overflow:hidden; user-select:none; -webkit-user-select:none; }
+.he-zoom { width:100%; height:100%; flex:1; align-self:stretch; display:flex; align-items:center;
+           justify-content:center; overflow:hidden; user-select:none; -webkit-user-select:none; }
+.he-zoom svg { width:100%; height:100%; display:block; }
 
 /* Mobile sticky action bar: hidden on desktop, thumb-reach fixed bar on phones */
 .he-actionbar { display:none; }
@@ -192,3 +193,15 @@ select.he-sel { background:#3a5233; color:#eef2e6; border:none; border-radius:6p
 }
 
 .he-version { font-size:11px; font-weight:600; opacity:.55; letter-spacing:0; vertical-align:2px; }
+
+/* Zoom controls overlay */
+.he-zoom { position: relative; }
+.he-zoomctl { position:absolute; right:10px; bottom:10px; display:flex; flex-direction:column;
+              gap:6px; z-index:5; }
+.he-zoomctl button { width:40px; height:40px; border-radius:10px; border:1px solid #0006;
+                     background:#24361fd9; color:#eef2e6; font-size:20px; font-weight:700;
+                     cursor:pointer; touch-action:manipulation; line-height:1;
+                     backdrop-filter: blur(4px); }
+.he-zoomctl button:active { background:#3a5233; }
+.he-zoomreset { display:none !important; font-size:16px !important; }
+.he-zoomed .he-zoomreset { display:block !important; }

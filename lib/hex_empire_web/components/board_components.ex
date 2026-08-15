@@ -68,6 +68,11 @@ defmodule HexEmpireWeb.BoardComponents do
     ~H"""
     <div id="board-zoom" phx-hook="BoardZoom" class="he-zoom">
       <.board_svg hexes={@hexes} viewer={@viewer} vb_w={@vb_w} vb_h={@vb_h} />
+      <div class="he-zoomctl">
+        <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
+        <button type="button" data-zoom="out" aria-label="Zoom out">−</button>
+        <button type="button" data-zoom="reset" aria-label="Fit board" class="he-zoomreset">⛶</button>
+      </div>
     </div>
     """
   end

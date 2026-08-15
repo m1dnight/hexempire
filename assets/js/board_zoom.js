@@ -1,21 +1,24 @@
 // Pinch-zoom / pan for the game board SVG.
 //
-// The hook owns a client-side view transform (scale + center) and applies it
-// by rewriting the SVG's viewBox. LiveView re-renders the SVG on every game
-// update, so `updated()` re-applies the transform after each patch.
+// The hook owns a client-side view transform (scale + center) and renders it
+// by rewriting the SVG viewBox. The viewBox always matches the CONTAINER's
+// aspect ratio (preserveAspectRatio=none), so a zoomed view fills the whole
+// board area instead of letterboxing to the board's own aspect. LiveView
+// re-renders the SVG on every game update; `updated()` re-applies the view.
 //
-// Gestures:
-//   * one-finger drag / mouse drag ... pan (a real tap still clicks a hex:
-//     clicks are suppressed only after movement beyond a small threshold)
+// Gestures & controls:
+//   * one-finger drag / mouse drag ... pan (taps still click hexes; clicks
+//     are suppressed only after movement beyond a small threshold)
 //   * two-finger pinch ............... zoom around the pinch midpoint
 //   * mouse wheel / trackpad ......... zoom around the cursor
-//   * double-tap / double-click ...... toggle 1x <-> 2.5x at that point
+//   * double-tap / double-click ...... toggle fit <-> 2.5x at that point
+//   * overlay buttons ................ [+] [-] and fit-to-board reset
 //
-// Scale is clamped to [1, 5]; panning is clamped to the board bounds.
+// scale=1 means "whole board fits"; max zoom is 6x.
 
-const MIN_SCALE = 1;
-const MAX_SCALE = 5;
+const MAX_SCALE = 6;
 const DRAG_THRESHOLD = 8; // px of movement before a tap becomes a pan
+const BUTTON_STEP = 1.5;
 
 export const BoardZoom = {
   mounted() {
@@ -37,17 +40,38 @@ export const BoardZoom = {
     this.el.addEventListener("pointerup", (e) => this.onUp(e));
     this.el.addEventListener("pointercancel", (e) => this.onUp(e));
     this.el.addEventListener("wheel", (e) => this.onWheel(e), { passive: false });
+    this.el.addEventListener("dblclick", (e) => {
+      if (!e.target.closest("[data-zoom]")) this.toggleZoom(e);
+    });
+
+    // Zoom control buttons (delegated: the buttons live inside LV-patched DOM)
+    this.el.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-zoom]");
+      if (!btn) return;
+      e.stopPropagation();
+      const rect = this.el.getBoundingClientRect();
+      const center = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+
+      if (btn.dataset.zoom === "in") this.zoomAt(center, this.scale * BUTTON_STEP);
+      if (btn.dataset.zoom === "out") this.zoomAt(center, this.scale / BUTTON_STEP);
+      if (btn.dataset.zoom === "reset") this.reset();
+    });
+
     // Swallow the click that follows a drag so panning never moves an army.
     this.el.addEventListener(
       "click",
       (e) => {
-        if (this.dragged) {
+        if (this.dragged && !e.target.closest("[data-zoom]")) {
           e.stopPropagation();
           e.preventDefault();
         }
       },
       { capture: true }
     );
+
+    // Re-fit when the container changes size (rotation, window resize).
+    this.resizeObserver = new ResizeObserver(() => this.apply());
+    this.resizeObserver.observe(this.el);
 
     this.apply();
   },
@@ -58,9 +82,14 @@ export const BoardZoom = {
     this.apply();
   },
 
+  destroyed() {
+    if (this.resizeObserver) this.resizeObserver.disconnect();
+  },
+
   // --- gesture handling -----------------------------------------------------
 
   onDown(e) {
+    if (e.target.closest("[data-zoom]")) return;
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pointers.size === 1) {
       this.dragged = false;
@@ -105,12 +134,11 @@ export const BoardZoom = {
     this.pointers.delete(e.pointerId);
     this.pinchDist = 0;
 
-    // Double-tap toggles zoom (touch only; desktop gets dblclick via wheel).
-    if (!this.dragged && e.pointerType === "touch") {
+    // Double-tap toggles zoom (touch; desktop uses dblclick).
+    if (!this.dragged && e.pointerType === "touch" && !e.target.closest("[data-zoom]")) {
       const now = Date.now();
       if (now - this.lastTap < 300) {
-        const target = this.scale > 1.5 ? 1 : 2.5;
-        this.zoomAt({ x: e.clientX, y: e.clientY }, target);
+        this.toggleZoom(e);
         this.dragged = true; // swallow the click of the second tap
       }
       this.lastTap = now;
@@ -123,47 +151,76 @@ export const BoardZoom = {
     this.zoomAt({ x: e.clientX, y: e.clientY }, this.scale * factor);
   },
 
+  toggleZoom(e) {
+    const target = this.scale > 1.4 ? 1 : 2.5;
+    this.zoomAt({ x: e.clientX, y: e.clientY }, target);
+  },
+
+  reset() {
+    this.scale = 1;
+    this.cx = this.base.x + this.base.w / 2;
+    this.cy = this.base.y + this.base.h / 2;
+    this.apply();
+  },
+
   // --- view math ------------------------------------------------------------
+
+  // View dimensions in board units: container aspect, sized so that at
+  // scale=1 the entire board fits (with margin on one axis at most).
+  viewDims() {
+    const rect = this.el.getBoundingClientRect();
+    const aspect = rect.width > 0 ? rect.height / rect.width : this.base.h / this.base.w;
+    // width that fits the whole board at scale 1 for this aspect
+    const fitW = Math.max(this.base.w, this.base.h / aspect);
+    const vw = fitW / this.scale;
+    return { vw, vh: vw * aspect };
+  },
 
   unitsPerPixel() {
     const rect = this.el.getBoundingClientRect();
-    return this.base.w / this.scale / rect.width;
+    return this.viewDims().vw / rect.width;
   },
 
   // Zoom so that the board point under `client` stays under the finger/cursor.
   zoomAt(client, newScale) {
-    newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, newScale));
-    const rect = this.svg.getBoundingClientRect();
-    // board coords of the screen point at the current view
-    const vw = this.base.w / this.scale;
-    const vh = this.base.h / this.scale;
+    newScale = Math.min(MAX_SCALE, Math.max(1, newScale));
+    const rect = this.el.getBoundingClientRect();
+    const { vw, vh } = this.viewDims();
     const bx = this.cx - vw / 2 + ((client.x - rect.left) / rect.width) * vw;
     const by = this.cy - vh / 2 + ((client.y - rect.top) / rect.height) * vh;
 
-    const nvw = this.base.w / newScale;
-    const nvh = this.base.h / newScale;
+    this.scale = newScale;
+    const dims = this.viewDims();
     const fx = (client.x - rect.left) / rect.width;
     const fy = (client.y - rect.top) / rect.height;
-    this.cx = bx + (0.5 - fx) * nvw;
-    this.cy = by + (0.5 - fy) * nvh;
-    this.scale = newScale;
+    this.cx = bx + (0.5 - fx) * dims.vw;
+    this.cy = by + (0.5 - fy) * dims.vh;
     this.apply();
   },
 
   apply() {
-    const vw = this.base.w / this.scale;
-    const vh = this.base.h / this.scale;
-    // clamp the view inside the board
-    const minX = this.base.x + vw / 2;
-    const maxX = this.base.x + this.base.w - vw / 2;
-    const minY = this.base.y + vh / 2;
-    const maxY = this.base.y + this.base.h - vh / 2;
-    this.cx = Math.min(maxX, Math.max(minX, this.cx));
-    this.cy = Math.min(maxY, Math.max(minY, this.cy));
+    if (!this.svg) return;
+    const { vw, vh } = this.viewDims();
 
+    // Clamp: keep the view inside the board; when the view is larger than the
+    // board on an axis (fit margin), lock that axis to the board center.
+    this.cx = clampCenter(this.cx, this.base.x, this.base.w, vw);
+    this.cy = clampCenter(this.cy, this.base.y, this.base.h, vh);
+
+    this.svg.setAttribute("preserveAspectRatio", "none");
     this.svg.setAttribute(
       "viewBox",
       `${this.cx - vw / 2} ${this.cy - vh / 2} ${vw} ${vh}`
     );
+
+    // Reflect zoom state on the container (shows/hides the reset affordance).
+    this.el.classList.toggle("he-zoomed", this.scale > 1.01);
   },
 };
+
+function clampCenter(c, min, extent, view) {
+  if (view >= extent) return min + extent / 2;
+  const lo = min + view / 2;
+  const hi = min + extent - view / 2;
+  return Math.min(hi, Math.max(lo, c));
+}
