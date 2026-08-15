@@ -44,6 +44,15 @@ if config_env() == :prod do
   # cwd-relative "saves" directory, which depends on the release launch dir.
   config :hex_empire, :save_dir, System.get_env("SAVE_DIR") || "/var/lib/hex_empire/saves"
 
+  # Web Push (turn notifications). Generate keys with:
+  #   mix run -e 'IO.inspect(ExNudge.generate_vapid_keys())'
+  if vapid_public = System.get_env("VAPID_PUBLIC_KEY") do
+    config :ex_nudge,
+      vapid_subject: System.get_env("VAPID_SUBJECT") || "mailto:admin@#{host}",
+      vapid_public_key: vapid_public,
+      vapid_private_key: System.fetch_env!("VAPID_PRIVATE_KEY")
+  end
+
   config :hex_empire, HexEmpireWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
     http: [

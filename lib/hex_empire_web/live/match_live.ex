@@ -40,6 +40,8 @@ defmodule HexEmpireWeb.MatchLive do
            token: token,
            party: party,
            base_url: base_url(socket),
+           push_key: if(HexEmpire.Push.enabled?(), do: HexEmpire.Push.public_key()),
+           push_state: :off,
            selected: nil,
            valid_moves: []
          )
@@ -106,6 +108,17 @@ defmodule HexEmpireWeb.MatchLive do
   def handle_event("end_turn", _params, socket) do
     Matches.end_turn(socket.assigns.id, socket.assigns.token)
     {:noreply, socket}
+  end
+
+  def handle_event("push_subscribed", sub, socket) do
+    case Matches.set_push_sub(socket.assigns.id, socket.assigns.token, sub) do
+      :ok -> {:noreply, assign(socket, push_state: :on)}
+      _ -> {:noreply, assign(socket, push_state: :error)}
+    end
+  end
+
+  def handle_event("push_denied", _params, socket) do
+    {:noreply, assign(socket, push_state: :error)}
   end
 
   defp click(socket, g, key) do
@@ -349,6 +362,17 @@ defmodule HexEmpireWeb.MatchLive do
           >
             End Turn
           </button>
+          <button
+            :if={@party != nil and @push_key != nil and @push_state != :on}
+            id="push-subscribe"
+            phx-hook="PushSubscribe"
+            data-vapid={@push_key}
+            class="he-btn ghost"
+          >
+            🔔 Notify me on my turn
+          </button>
+          <div :if={@push_state == :on} class="he-sub">🔔 Turn alerts enabled on this device.</div>
+          <div :if={@push_state == :error} class="he-sub">Notifications blocked by the browser.</div>
         </div>
 
         <div class="he-card">

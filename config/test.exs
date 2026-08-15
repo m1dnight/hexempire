@@ -30,3 +30,4 @@ config :hex_empire, :ai_delay, 1
 # Shrink the GameStore disk-write debounce so store tests can poll for flushes
 config :hex_empire, :game_store_flush_ms, 25
 config :hex_empire, :match_ai_delay, 1
+config :hex_empire, :push_sender, HexEmpire.PushSenderStub

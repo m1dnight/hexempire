@@ -78,6 +78,10 @@ defmodule HexEmpire.Matches do
   @spec end_turn(String.t(), String.t()) :: :ok | {:error, term()}
   def end_turn(id, token), do: call(id, {:end_turn, token})
 
+  @doc "Store the seat's Web Push subscription (turn notifications)."
+  @spec set_push_sub(String.t(), String.t(), map()) :: :ok | :error | {:error, term()}
+  def set_push_sub(id, token, sub), do: call(id, {:set_push_sub, token, sub})
+
   @doc "Subscribe the calling process to `{:match_updated, match}` broadcasts."
   @spec subscribe(String.t()) :: :ok | {:error, term()}
   def subscribe(id) do

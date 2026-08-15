@@ -112,10 +112,12 @@ defmodule HexEmpire.Matches.MatchServer do
     with {:party, party} when party != nil <- {:party, Match.party_for_token(match, token)},
          {:turn, true} <- {:turn, seat_may_act?(match, party)},
          {:valid, true} <- {:valid, valid_move?(match.game, party, from, to)} do
+      prev = match
       {g, _result} = Engine.move(match.game, from, to)
       g = if g.actions <= 0 and g.winner == nil, do: Engine.end_turn(g), else: g
       match = %{match | game: g}
       if Match.ai_turn?(match), do: schedule_ai()
+      notify_transitions(prev, match)
       {:reply, :ok, persist_and_broadcast(match), @idle_ms}
     else
       _ -> {:reply, {:error, :invalid}, match, @idle_ms}
@@ -126,11 +128,26 @@ defmodule HexEmpire.Matches.MatchServer do
     party = Match.party_for_token(match, token)
 
     if party != nil and seat_may_act?(match, party) do
+      prev = match
       match = %{match | game: Engine.end_turn(match.game)}
       if Match.ai_turn?(match), do: schedule_ai()
+      notify_transitions(prev, match)
       {:reply, :ok, persist_and_broadcast(match), @idle_ms}
     else
       {:reply, {:error, :invalid}, match, @idle_ms}
+    end
+  end
+
+  def handle_call({:set_push_sub, token, sub}, _from, match) do
+    case Match.party_for_token(match, token) do
+      nil ->
+        {:reply, :error, match, @idle_ms}
+
+      party ->
+        seat = Map.put(match.seats[party], :push_sub, sub)
+        match = %{match | seats: Map.put(match.seats, party, seat)}
+        MatchStore.save(match)
+        {:reply, :ok, match, @idle_ms}
     end
   end
 
@@ -141,8 +158,10 @@ defmodule HexEmpire.Matches.MatchServer do
   @impl true
   def handle_info(:ai_tick, match) do
     if Match.ai_turn?(match) do
+      prev = match
       match = %{match | game: ai_step(match.game)}
       if Match.ai_turn?(match), do: schedule_ai()
+      notify_transitions(prev, match)
       {:noreply, persist_and_broadcast(match), @idle_ms}
     else
       {:noreply, match, @idle_ms}
@@ -190,6 +209,43 @@ defmodule HexEmpire.Matches.MatchServer do
   end
 
   defp schedule_ai, do: Process.send_after(self(), :ai_tick, @ai_delay)
+
+  # Web Push on state transitions: a human seat whose turn just began gets
+  # "your move"; everyone subscribed gets the result when a winner appears.
+  # Push sending is async fire-and-forget (HexEmpire.Push) — a slow or failed
+  # push can never block or crash the match.
+  defp notify_transitions(prev, match) do
+    g = match.game
+    pg = prev.game
+
+    cond do
+      g == nil or pg == nil ->
+        :ok
+
+      # winner just decided: tell every subscribed human seat
+      g.winner != nil and pg.winner == nil ->
+        winner = HexEmpire.Engine.faction_name(g.winner)
+
+        for {_party, %{kind: :human, push_sub: sub}} <- match.seats, sub != nil do
+          HexEmpire.Push.notify_match_over(sub, match.id, winner)
+        end
+
+        :ok
+
+      # turn just landed on a (different) human seat
+      g.winner == nil and g.turn_party != pg.turn_party ->
+        case match.seats[g.turn_party] do
+          %{kind: :human, push_sub: sub} when sub != nil ->
+            HexEmpire.Push.notify_turn(sub, match.id, HexEmpire.Engine.faction_name(g.turn_party))
+
+          _ ->
+            :ok
+        end
+
+      true ->
+        :ok
+    end
+  end
 
   defp persist_and_broadcast(match) do
     MatchStore.save(match)

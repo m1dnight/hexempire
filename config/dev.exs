@@ -80,3 +80,10 @@ config :phoenix_live_view,
   debug_attributes: true,
   # Enable helpful, but potentially expensive runtime checks
   enable_expensive_runtime_checks: true
+
+# Dev-only VAPID keys for Web Push (prod uses VAPID_* env vars; see runtime.exs)
+config :ex_nudge,
+  vapid_subject: "mailto:christophe.detroyer@gmail.com",
+  vapid_public_key:
+    "BOhtlOYMokwHTJwr0zWNo5hBhnh3Hr9XJyYAZ1Jauf0VD9X1wwdniPSFU-0SoI2O-cFcCIZLs3EYQEDFFMvJR5o",
+  vapid_private_key: "ne081_iO93ZStrbmgs6khkipjplsT_gZeLUiqVay1D8"
