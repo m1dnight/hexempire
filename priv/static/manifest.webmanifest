@@ -1,0 +1,14 @@
+{
+  "name": "Hex Empire",
+  "short_name": "Hex Empire",
+  "description": "Faithful port of the classic Hex Empire strategy game — solo and slow multiplayer.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1d2a1c",
+  "theme_color": "#24361f",
+  "icons": [
+    { "src": "/images/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/images/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
