@@ -121,6 +121,12 @@ defmodule HexEmpireWeb.BoardComponents do
   @doc "Faction metadata by party id."
   def faction(party), do: Enum.at(Engine.factions(), party)
 
+  # Captured at compile time so it also works inside releases (no Mix there).
+  @version Mix.Project.config()[:version]
+
+  @doc "The application version (from mix.exs), e.g. \"0.0.1\"."
+  def version, do: @version
+
   attr :status, :string, required: true
   attr :moves, :integer, default: nil, doc: "moves left, shown when it's the viewer's turn"
   attr :can_end_turn, :boolean, default: false

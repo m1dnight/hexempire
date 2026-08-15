@@ -288,7 +288,9 @@ defmodule HexEmpireWeb.GameLive do
 
       <div class="he-side">
         <div class="he-card">
-          <div class="he-title">HEX EMPIRE</div>
+          <div class="he-title">
+            HEX EMPIRE <span class="he-version">v{HexEmpireWeb.BoardComponents.version()}</span>
+          </div>
           <div class="he-sub">
             Turn {@game.turns} · {Engine.faction_name(@game.turn_party)} moving
           </div>

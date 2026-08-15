@@ -253,7 +253,10 @@ defmodule HexEmpireWeb.MatchLive do
     ~H"""
     <div class="he-center">
       <div class="he-card" style="min-width:340px;max-width:440px">
-        <div class="he-title">HEX EMPIRE — Match {@match.id}</div>
+        <div class="he-title">
+          HEX EMPIRE — Match {@match.id}
+          <span class="he-version">v{HexEmpireWeb.BoardComponents.version()}</span>
+        </div>
         <div class="he-sub" style="margin-bottom:10px">
           Send this link to invite players — unclaimed factions play as computers.
         </div>
@@ -322,7 +325,9 @@ defmodule HexEmpireWeb.MatchLive do
 
       <div class="he-side">
         <div class="he-card">
-          <div class="he-title">HEX EMPIRE</div>
+          <div class="he-title">
+            HEX EMPIRE <span class="he-version">v{HexEmpireWeb.BoardComponents.version()}</span>
+          </div>
           <div class="he-sub">
             Match {@id} · Round {@match.game.turns} · {Engine.faction_name(@match.game.turn_party)} moving
           </div>

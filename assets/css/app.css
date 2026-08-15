@@ -190,3 +190,5 @@ select.he-sel { background:#3a5233; color:#eef2e6; border:none; border-radius:6p
   .he-side { width: 230px; overflow-y: auto; }
   .he-actionbar { left: auto; width: 230px; right: max(0px, env(safe-area-inset-right)); }
 }
+
+.he-version { font-size:11px; font-weight:600; opacity:.55; letter-spacing:0; vertical-align:2px; }
