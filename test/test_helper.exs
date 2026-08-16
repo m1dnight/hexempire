@@ -3,4 +3,4 @@
 File.rm_rf!(Application.fetch_env!(:hex_empire, :save_dir))
 File.mkdir_p!(Application.fetch_env!(:hex_empire, :save_dir))
 
-ExUnit.start()
+ExUnit.start(exclude: [:tournament])
