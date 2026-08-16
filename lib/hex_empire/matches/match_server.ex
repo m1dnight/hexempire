@@ -138,6 +138,15 @@ defmodule HexEmpire.Matches.MatchServer do
     end
   end
 
+  def handle_call({:set_brutal, token, brutal?}, _from, match) do
+    if match.status == :lobby and token != nil and token == match.host_token do
+      match = %{match | brutal_ai: brutal?}
+      {:reply, :ok, persist_and_broadcast(match), @idle_ms}
+    else
+      {:reply, {:error, :invalid}, match, @idle_ms}
+    end
+  end
+
   def handle_call({:set_push_sub, token, sub}, _from, match) do
     case Match.party_for_token(match, token) do
       nil ->
@@ -159,7 +168,7 @@ defmodule HexEmpire.Matches.MatchServer do
   def handle_info(:ai_tick, match) do
     if Match.ai_turn?(match) do
       prev = match
-      match = %{match | game: ai_step(match.game)}
+      match = %{match | game: ai_step(match.game, Match.ai_module(match))}
       if Match.ai_turn?(match), do: schedule_ai()
       notify_transitions(prev, match)
       {:noreply, persist_and_broadcast(match), @idle_ms}
@@ -175,10 +184,10 @@ defmodule HexEmpire.Matches.MatchServer do
   # One AI action, finishing the turn when the step yields nothing, the
   # budget is spent, or no movable armies remain (same reduction as
   # Campaigns.ai_step; a game decided mid-step skips the finish).
-  defp ai_step(g) do
+  defp ai_step(g, ai) do
     {g, result} =
       if g.actions > 0 and Engine.movable_armies(g) != [] do
-        Engine.ai_step(g)
+        Engine.ai_step(g, ai)
       else
         {g, nil}
       end

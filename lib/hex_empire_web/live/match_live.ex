@@ -80,6 +80,11 @@ defmodule HexEmpireWeb.MatchLive do
     end
   end
 
+  def handle_event("toggle_brutal", _params, socket) do
+    Matches.set_brutal(socket.assigns.id, socket.assigns.token, not brutal?(socket.assigns.match))
+    {:noreply, socket}
+  end
+
   def handle_event("start", _params, socket) do
     Matches.start_match(socket.assigns.id, socket.assigns.token)
     {:noreply, socket}
@@ -171,6 +176,9 @@ defmodule HexEmpireWeb.MatchLive do
 
   defp my_turn?(_, _), do: false
 
+  # Lenient read: matches saved before the flag existed lack the key.
+  defp brutal?(match), do: Map.get(match, :brutal_ai, false)
+
   defp seat_label(%{kind: :open}), do: "Open seat"
   defp seat_label(%{kind: :ai}), do: "Computer"
   defp seat_label(%{kind: :human}), do: "Claimed"
@@ -260,6 +268,19 @@ defmodule HexEmpireWeb.MatchLive do
           />
         </div>
 
+        <div
+          :if={@token != nil and @token == @match.host_token}
+          class="he-card"
+          style="background:#22301c;margin-top:8px;display:flex;align-items:center;gap:8px"
+        >
+          <div class="he-sub" style="flex:1">
+            Computer strength: {if brutal?(@match), do: "Brutal (new AI)", else: "Classic"}
+          </div>
+          <button class="he-btn ghost" style="width:auto;padding:6px 10px" phx-click="toggle_brutal">
+            Switch
+          </button>
+        </div>
+
         <button
           :if={@token != nil and @token == @match.host_token}
           class="he-btn primary"
@@ -314,7 +335,9 @@ defmodule HexEmpireWeb.MatchLive do
             <div class="he-name">
               {faction(party).name}
               <span :if={@party == party} class="he-sub">(you)</span>
-              <span :if={seat.kind == :ai} class="he-sub">(computer)</span>
+              <span :if={seat.kind == :ai} class="he-sub">
+                ({if brutal?(@match), do: "brutal computer", else: "computer"})
+              </span>
               <div class="he-sub">
                 {status_name(@match.game, party)} · {Enum.at(@match.game.total_count, party)} troops
               </div>

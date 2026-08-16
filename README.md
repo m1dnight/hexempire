@@ -91,6 +91,10 @@ Two AI players live in the engine:
   seat-rotated, seeds 1-50): **53%** overall win rate vs the original's
   25% self-play null — stronger from every seat.
 
+In the game, `TurnPlannerAi` is the **Brutal** difficulty: the fourth
+option in the solo campaign selector, and a host-set "Computer strength"
+toggle in match lobbies (classic is the default everywhere).
+
 Measure any AI with `mix ai.tournament --games 50 --challenger <module>`;
 the strength regression test runs with `mix test --only tournament`.
 

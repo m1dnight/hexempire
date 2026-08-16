@@ -25,7 +25,7 @@ defmodule HexEmpire.Engine do
   `game.fields`, with board order given by `game.field_order`.
   """
 
-  alias HexEmpire.Engine.{Actions, Config, Movement, OriginalAi, State}
+  alias HexEmpire.Engine.{Actions, Ai, Config, Movement, OriginalAi, State}
 
   @typedoc "A field key, `\"f<x>x<y>\"` (see `HexEmpire.Engine.Hex.field_key/2`)."
   @type field_key :: String.t()
@@ -120,13 +120,17 @@ defmodule HexEmpire.Engine do
   Perform a single AI action for the current turn party (rank all moves, apply
   the best, spend an action). Returns `{game, result | nil}` — `nil` when the
   AI had no move (its action budget is zeroed in that case).
+
+  The optional `ai` module selects the player: `OriginalAi` (default — the
+  classic, golden-verified opponent) or any `HexEmpire.Engine.Ai`
+  implementation such as `TurnPlannerAi` (the "Brutal" difficulty).
   """
-  @spec ai_step(game()) :: {game(), move_result() | nil}
-  defdelegate ai_step(game), to: OriginalAi, as: :perform_ai_action
+  @spec ai_step(game(), module()) :: {game(), move_result() | nil}
+  def ai_step(game, ai \\ OriginalAi), do: ai.play_action(game)
 
   @doc "Play the current AI party's whole turn at once (no turn finish)."
-  @spec ai_turn(game()) :: game()
-  defdelegate ai_turn(game), to: OriginalAi, as: :perform_fast_ai_turn
+  @spec ai_turn(game(), module()) :: game()
+  def ai_turn(game, ai \\ OriginalAi), do: Ai.play_turn(game, ai)
 
   # ---------------------------------------------------------------------------
   # Display data

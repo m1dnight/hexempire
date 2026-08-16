@@ -4,7 +4,7 @@ defmodule HexEmpire.MixProject do
   def project do
     [
       app: :hex_empire,
-      version: "0.0.1",
+      version: "0.0.2",
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,

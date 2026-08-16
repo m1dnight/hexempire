@@ -21,7 +21,7 @@ defmodule HexEmpire.Matches.Match do
   alias HexEmpire.Engine
 
   @enforce_keys [:id, :status, :seats, :created_at]
-  defstruct [:id, :status, :game, :seats, :host_token, :created_at]
+  defstruct [:id, :status, :game, :seats, :host_token, :created_at, brutal_ai: false]
 
   @type seat :: %{
           kind: :open | :human | :ai,
@@ -34,7 +34,8 @@ defmodule HexEmpire.Matches.Match do
           game: Engine.game() | nil,
           seats: %{Engine.party() => seat()},
           host_token: String.t() | nil,
-          created_at: integer()
+          created_at: integer(),
+          brutal_ai: boolean()
         }
 
   # Short human-friendly code: lowercase base32 without look-alikes (i/l/1, o/0).
@@ -89,6 +90,17 @@ defmodule HexEmpire.Matches.Match do
   @spec open_parties(t()) :: [Engine.party()]
   def open_parties(match) do
     for {party, %{kind: :open}} <- Enum.sort(match.seats), do: party
+  end
+
+  @doc """
+  The AI module driving this match's computer seats. Read leniently
+  (`Map.get`) so matches saved before the flag existed keep loading.
+  """
+  @spec ai_module(t()) :: module()
+  def ai_module(match) do
+    if Map.get(match, :brutal_ai, false),
+      do: HexEmpire.Engine.TurnPlannerAi,
+      else: HexEmpire.Engine.OriginalAi
   end
 
   @doc "True when the current turn belongs to an AI seat of a running match."
