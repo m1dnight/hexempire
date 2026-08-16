@@ -17,7 +17,7 @@ defmodule HexEmpireWeb.GameLive do
   use HexEmpireWeb, :live_view
 
   import HexEmpireWeb.BoardComponents,
-    only: [board: 1, build_hexes: 4, faction: 1, action_bar: 1]
+    only: [board: 1, build_hexes: 4, faction: 1, action_bar: 1, base_url: 1, copy_link: 1]
 
   alias HexEmpire.{Campaigns, Engine}
 
@@ -26,10 +26,11 @@ defmodule HexEmpireWeb.GameLive do
 
   @impl true
   def mount(_params, session, socket) do
-    player_id = session["player_id"]
-    socket = assign(socket, player_id: player_id)
+    # campaign_id keys the solo save; /c/:token rebinds other browsers to it
+    campaign_id = session["campaign_id"] || session["player_id"]
+    socket = assign(socket, player_id: campaign_id, base_url: base_url(socket))
 
-    case Campaigns.resume(player_id) do
+    case Campaigns.resume(campaign_id) do
       %{game: game, difficulty: difficulty} ->
         # Resume works on both the static and the connected mount so the
         # page renders the same board twice (no flash). The AI timer is only
@@ -333,6 +334,13 @@ defmodule HexEmpireWeb.GameLive do
             <div :for={line <- @game.log}>· {line}</div>
             <div :if={@game.log == []} class="he-sub">All quiet on every front.</div>
           </div>
+        </div>
+
+        <div class="he-card">
+          <.copy_link
+            url={"#{@base_url}/c/#{@player_id}"}
+            label="Continue this campaign anywhere (click to copy):"
+          />
         </div>
 
         <form class="he-card" phx-submit="new_game" style="display:flex;flex-direction:column;gap:8px">

@@ -1,0 +1,24 @@
+#!/bin/bash
+# Pull-based deploy (installed at /usr/local/bin/hexempire-deploy on the
+# server, run by hexempire-deploy.timer every 5 minutes): recreate the
+# container when CI has pushed a newer image to GHCR.
+set -euo pipefail
+IMAGE=ghcr.io/m1dnight/hexempire:latest
+
+docker --config /home/ubuntu/.docker pull -q "$IMAGE" > /dev/null
+latest=$(docker image inspect --format "{{.Id}}" "$IMAGE")
+running=$(docker inspect --format "{{.Image}}" hexempire 2>/dev/null || echo none)
+
+if [ "$latest" != "$running" ]; then
+  echo "new image detected ($running -> $latest), redeploying"
+  # graceful stop first: SIGTERM lets the BEAM flush pending game saves
+  docker stop -t 20 hexempire > /dev/null 2>&1 || true
+  docker rm hexempire > /dev/null 2>&1 || true
+  docker run -d --name hexempire --restart unless-stopped \
+    -p 4000:4000 --env-file /etc/hexempire.env \
+    -v hexempire_saves:/var/lib/hex_empire/saves "$IMAGE" > /dev/null
+  docker image prune -f > /dev/null
+  echo "redeployed"
+else
+  echo "up to date"
+fi

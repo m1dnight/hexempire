@@ -132,6 +132,39 @@ defmodule HexEmpireWeb.BoardComponents do
   @doc "The application version (from mix.exs), e.g. \"0.0.1\"."
   def version, do: @version
 
+  @doc """
+  The absolute URL prefix as the visitor sees it (proxy hostname, LAN IP,
+  tunnel, ...), so shared links are copy-pasteable full URLs. Falls back to
+  the endpoint's configured URL.
+  """
+  def base_url(socket) do
+    case socket.host_uri do
+      %URI{} = uri -> uri |> URI.to_string() |> String.trim_trailing("/")
+      _ -> HexEmpireWeb.Endpoint.url()
+    end
+  end
+
+  attr :url, :string, required: true
+  attr :label, :string, required: true
+
+  @doc """
+  A full URL with a tap-to-copy affordance (inline clipboard JS — no hook
+  needed; degrades gracefully where the Clipboard API is unavailable).
+  """
+  def copy_link(assigns) do
+    ~H"""
+    <div class="he-sub">{@label}</div>
+    <code
+      class="he-code"
+      title="Click to copy"
+      onclick="navigator.clipboard && navigator.clipboard.writeText(this.dataset.url).then(() => { this.classList.add('he-copied'); setTimeout(() => this.classList.remove('he-copied'), 1200); })"
+      data-url={@url}
+    >
+      {@url}
+    </code>
+    """
+  end
+
   attr :status, :string, required: true
   attr :moves, :integer, default: nil, doc: "moves left, shown when it's the viewer's turn"
   attr :can_end_turn, :boolean, default: false

@@ -13,7 +13,7 @@ defmodule HexEmpireWeb.MatchLive do
   use HexEmpireWeb, :live_view
 
   import HexEmpireWeb.BoardComponents,
-    only: [board: 1, build_hexes: 4, faction: 1, action_bar: 1]
+    only: [board: 1, build_hexes: 4, faction: 1, action_bar: 1, base_url: 1, copy_link: 1]
 
   alias HexEmpire.{Engine, Matches}
   alias HexEmpire.Matches.Match
@@ -46,16 +46,6 @@ defmodule HexEmpireWeb.MatchLive do
            valid_moves: []
          )
          |> assign_board()}
-    end
-  end
-
-  # The absolute URL prefix as the visitor sees it (proxy hostname, LAN IP,
-  # tunnel, ...), so shared links are copy-pasteable full URLs. Falls back to
-  # the endpoint's configured URL.
-  defp base_url(socket) do
-    case socket.host_uri do
-      %URI{} = uri -> uri |> URI.to_string() |> String.trim_trailing("/")
-      _ -> HexEmpireWeb.Endpoint.url()
     end
   end
 
@@ -210,25 +200,6 @@ defmodule HexEmpireWeb.MatchLive do
 
   defp match_url(base_url, id), do: "#{base_url}/m/#{id}"
   defp personal_url(base_url, id, token), do: "#{base_url}/m/#{id}?seat=#{token}"
-
-  # A full URL with a tap-to-copy affordance (inline clipboard JS — no hook
-  # needed; falls back gracefully where the Clipboard API is unavailable).
-  attr :url, :string, required: true
-  attr :label, :string, required: true
-
-  defp copy_link(assigns) do
-    ~H"""
-    <div class="he-sub">{@label}</div>
-    <code
-      class="he-code"
-      title="Click to copy"
-      onclick="navigator.clipboard && navigator.clipboard.writeText(this.dataset.url).then(() => { this.classList.add('he-copied'); setTimeout(() => this.classList.remove('he-copied'), 1200); })"
-      data-url={@url}
-    >
-      {@url}
-    </code>
-    """
-  end
 
   # =========================================================================
   # Render
