@@ -78,6 +78,26 @@ within ~10 minutes of the tests passing. Config lives in `/etc/hexempire.env`
 (stable `SECRET_KEY_BASE` — sessions survive deploys); campaigns and matches
 live in the `hexempire_saves` volume and survive container replacement.
 
+## AI
+
+Two AI players live in the engine:
+
+* **`OriginalAi`** — the bit-exact port of the original's greedy scorer
+  (golden-verified; this is what shipped games use).
+* **`TurnPlannerAi`** — the challenger: deterministic beam search over the
+  entire 5-move turn using the pure engine as its forward model, with BFS
+  distance fields, a focus-target FFA policy, and ratio-gated combat
+  (design + research in `docs/ai-research.md`). Tournament (200 games,
+  seat-rotated, seeds 1-50): **53%** overall win rate vs the original's
+  25% self-play null — stronger from every seat.
+
+In the game, `TurnPlannerAi` is the **Brutal** difficulty: the fourth
+option in the solo campaign selector, and a host-set "Computer strength"
+toggle in match lobbies (classic is the default everywhere).
+
+Measure any AI with `mix ai.tournament --games 50 --challenger <module>`;
+the strength regression test runs with `mix test --only tournament`.
+
 ## Multiplayer
 
 Click **Create multiplayer match** on the home page and share the `/m/<code>`

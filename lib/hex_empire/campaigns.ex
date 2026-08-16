@@ -14,6 +14,17 @@ defmodule HexEmpire.Campaigns do
   """
 
   alias HexEmpire.{Engine, GameStore}
+  alias HexEmpire.Engine.{OriginalAi, TurnPlannerAi}
+
+  # Difficulty 15 is the "Brutal" sentinel: enemies run the TurnPlannerAi
+  # challenger (beam search) instead of the classic greedy AI. 0/5/10 map to
+  # the original's easy/normal/hard biases.
+  @brutal 15
+
+  @doc "The AI module playing the campaign's enemy parties."
+  @spec ai_module(non_neg_integer()) :: module()
+  def ai_module(difficulty) when difficulty >= @brutal, do: TurnPlannerAi
+  def ai_module(_difficulty), do: OriginalAi
 
   @typedoc "A player's campaign: the saved game plus its difficulty setting."
   @type t :: %{
@@ -43,7 +54,15 @@ defmodule HexEmpire.Campaigns do
   """
   @spec new_campaign(String.t() | nil, Engine.party(), non_neg_integer()) :: t()
   def new_campaign(player_id, faction, difficulty) do
-    game = Engine.new_game(seed: :rand.uniform(999_999), human: faction, difficulty: difficulty)
+    # the engine's difficulty stays in the original's 0..10 range (its scoring
+    # biases); Brutal (15) is a campaign-level setting selecting the AI module
+    game =
+      Engine.new_game(
+        seed: :rand.uniform(999_999),
+        human: faction,
+        difficulty: min(difficulty, 10)
+      )
+
     save(%{player_id: player_id, game: game, difficulty: difficulty})
   end
 
@@ -84,10 +103,10 @@ defmodule HexEmpire.Campaigns do
   decided mid-step (winner set, screen no longer `:game`) skips the finish.
   """
   @spec ai_step(t()) :: t()
-  def ai_step(%{game: g} = campaign) do
+  def ai_step(%{game: g, difficulty: difficulty} = campaign) do
     {g, result} =
       if g.actions > 0 and Engine.movable_armies(g) != [] do
-        Engine.ai_step(g)
+        Engine.ai_step(g, ai_module(difficulty))
       else
         {g, nil}
       end

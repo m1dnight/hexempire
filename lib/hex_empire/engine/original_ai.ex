@@ -17,8 +17,10 @@ defmodule HexEmpire.Engine.OriginalAi do
     residual ties keep iteration order.
   """
 
+  @behaviour HexEmpire.Engine.Ai
+
   alias HexEmpire.Engine
-  alias HexEmpire.Engine.{Actions, Hex, Movement, Pathfinding, State}
+  alias HexEmpire.Engine.{Actions, Ai, Query}
 
   # ---------------------------------------------------------------------------
   # Public: one AI action / a full fast AI turn
@@ -31,6 +33,10 @@ defmodule HexEmpire.Engine.OriginalAi do
   action. Returns `{game, result | nil}`; nil means no move was possible and
   the action budget was zeroed.
   """
+  @impl Ai
+  @spec play_action(Engine.game()) :: {Engine.game(), Engine.move_result() | nil}
+  def play_action(game), do: perform_ai_action(game)
+
   @spec perform_ai_action(Engine.game()) :: {Engine.game(), Engine.move_result() | nil}
   def perform_ai_action(game) do
     party = game.turn_party
@@ -82,27 +88,11 @@ defmodule HexEmpire.Engine.OriginalAi do
 
   @doc """
   performFastAiTurn: play the current party's whole turn, re-ranking after
-  every move, until the budget or the movable armies run out (the JS returns
-  a results list; this port intentionally drops it). Does not finish the turn.
+  every move (the shared `Ai.play_turn/2` driver preserves the exact original
+  loop). Does not finish the turn.
   """
   @spec perform_fast_ai_turn(Engine.game()) :: Engine.game()
-  def perform_fast_ai_turn(game) do
-    party = game.turn_party
-
-    if game.screen == :game and game.turn_party == party and game.actions > 0 and
-         State.movable_armies(game, party) != [] do
-      {game, result} = perform_ai_action(game)
-
-      game =
-        if result == nil and game.actions > 0,
-          do: %{game | actions: 0},
-          else: game
-
-      perform_fast_ai_turn(game)
-    else
-      game
-    end
-  end
+  def perform_fast_ai_turn(game), do: Ai.play_turn(game, __MODULE__)
 
   # ---------------------------------------------------------------------------
   # Ranking
@@ -112,18 +102,18 @@ defmodule HexEmpire.Engine.OriginalAi do
   @spec rank_ai_armies(Engine.game(), Engine.party()) ::
           {[map()], %{Engine.field_key() => boolean()}}
   def rank_ai_armies(game, party) do
-    armies = State.movable_armies(game, party)
+    armies = Query.movable_armies(game, party)
 
     # `grads` memoizes capital_gradient per {field, capital} for THIS ranking
     # pass only — fields are frozen while ranking, so find_path is pure here.
     {ranked, wait_flags, _grads} =
       Enum.reduce(armies, {[], %{}, %{}}, fn army_key, {ranked, wait_flags, grads} ->
-        origin = Map.fetch!(game.fields, army_key)
+        origin = Query.field(game, army_key)
         army = origin.army
 
         {choices, wait_flags, grads} =
           game
-          |> Movement.possible_moves(army_key, true)
+          |> Query.moves(army_key)
           |> Enum.reduce({[], wait_flags, grads}, fn field_key, {cs, wf, gr} ->
             {score, flag, gr} = score_move_cached(game, party, army_key, field_key, gr)
             {[%{field: field_key, score: score} | cs], Map.put(wf, field_key, flag), gr}
@@ -148,12 +138,7 @@ defmodule HexEmpire.Engine.OriginalAi do
 
             {ranked ++
                [
-                 %{
-                   army: army_key,
-                   target: best.field,
-                   score: score,
-                   power: army.count + army.morale
-                 }
+                 %{army: army_key, target: best.field, score: score, power: Query.power(army)}
                ], wait_flags, grads}
         end
       end)
@@ -179,22 +164,19 @@ defmodule HexEmpire.Engine.OriginalAi do
   # score_move threading the per-ranking-pass capital_gradient memo (see
   # rank_ai_armies); returns {score, wait_for_support_flag, grads}.
   defp score_move_cached(game, party, army_key, field_key, grads) do
-    origin = Map.fetch!(game.fields, army_key)
+    origin = Query.field(game, army_key)
     army = origin.army
-    field = Map.fetch!(game.fields, field_key)
+    field = Query.field(game, field_key)
 
-    # (a) capital gradient toward every enemy-held original capital
+    # (a) march gradient: closest enemy home capital dominates the base score
+    # (walking-path length toward each enemy-held original capital, negated;
+    # the human's capital gets +difficulty*2 so harder AIs hunt the player)
     {score, grads} =
-      Enum.reduce(0..3, {-1.0e7, grads}, fn p, {acc, gr} ->
-        cap_key = Enum.at(game.capitals, p)
-
-        if p != party and cap_key != nil and Map.fetch!(game.fields, cap_key).party == p do
-          {s, gr} = capital_gradient(gr, game, field_key, cap_key)
-          s = if p == game.human, do: s + game.difficulty * 2, else: s
-          {max(acc, s), gr}
-        else
-          {acc, gr}
-        end
+      Enum.reduce(Query.enemy_home_capitals(game, party), {-1.0e7, grads}, fn {p, cap_key},
+                                                                              {acc, gr} ->
+        {s, gr} = capital_gradient(gr, game, field_key, cap_key)
+        s = if p == game.human, do: s + game.difficulty * 2, else: s
+        {max(acc, s), gr}
       end)
 
     # (c) enemy-land bonuses; guaranteed capital kill
@@ -202,7 +184,7 @@ defmodule HexEmpire.Engine.OriginalAi do
       if field.type == :land and field.party != party do
         cond do
           field.capital >= 0 and field.capital == field.party and field.army != nil and
-              army.count + army.morale > field.army.count + field.army.morale ->
+              Query.power(army) > Query.power(field.army) ->
             {score + 1.0e6, true}
 
           field.capital >= 0 ->
@@ -214,7 +196,7 @@ defmodule HexEmpire.Engine.OriginalAi do
           field.estate == :port ->
             {score + 3, false}
 
-          near(game, field_key, fn n -> n.estate == :town end) ->
+          Query.near?(game, field_key, fn n -> n.estate == :town end) ->
             {score + 3, false}
 
           true ->
@@ -228,15 +210,14 @@ defmodule HexEmpire.Engine.OriginalAi do
     score =
       if field.army != nil and field.army.party != party do
         score =
-          if near(game, field_key, fn n -> n.capital == party end),
+          if Query.near?(game, field_key, fn n -> n.capital == party end),
             do: score + 1000,
             else: score
 
         score =
           if field.army.party != game.human and
-               Enum.at(game.total_power, field.army.party) >
-                 1.5 * Enum.at(game.total_power, party) and
-               field.army.count + field.army.morale > army.count + army.morale and
+               Query.total_power(game, field.army.party) > 1.5 * Query.total_power(game, party) and
+               Query.power(field.army) > Query.power(army) and
                ((field.army.party < 2 and party < 2) or (field.army.party > 1 and party > 1)),
              do: score + 200,
              else: score
@@ -264,14 +245,14 @@ defmodule HexEmpire.Engine.OriginalAi do
     # (g) objectiveScore — standard mode with no flags: 0
 
     # (h) wait-for-support
-    friendly_power = nearby_friendly_power(game, party, field_key)
-    enemy_power = nearby_enemy_power(game, party, field_key)
-    defender_power = if field.army, do: field.army.count + field.army.morale, else: 0
+    friendly_power = Query.friendly_power_near(game, party, field_key)
+    enemy_power = Query.enemy_power_near(game, party, field_key)
+    defender_power = Query.power(field.army)
 
     wait_condition =
       ((friendly_power < enemy_power and friendly_power < 300) or
-         (army.count + army.morale < defender_power and army.count < 90)) and
-        not near(game, field_key, fn n -> n.capital == party end) and
+         (Query.power(army) < defender_power and army.count < 90)) and
+        not Query.near?(game, field_key, fn n -> n.capital == party end) and
         not guaranteed
 
     if wait_condition do
@@ -298,21 +279,19 @@ defmodule HexEmpire.Engine.OriginalAi do
   @spec supporter(Engine.game(), Engine.party(), Engine.field_key(), Engine.field_key()) ::
           map() | nil
   def supporter(game, party, primary_key, target_key) do
-    target = Map.fetch!(game.fields, target_key)
-
     candidates =
       game
-      |> State.movable_armies(party)
+      |> Query.movable_armies(party)
       |> Enum.reduce([], fn army_key, acc ->
-        origin = Map.fetch!(game.fields, army_key)
+        origin = Query.field(game, army_key)
 
         if army_key != primary_key and origin.capital != party do
           moves =
             game
-            |> Movement.possible_moves(army_key, true)
+            |> Query.moves(army_key)
             |> Enum.filter(fn f ->
-              fld = Map.fetch!(game.fields, f)
-              f != target_key and (fld.army == nil or fld.army.party == party)
+              occupant = Query.army_at(game, f)
+              f != target_key and (occupant == nil or occupant.party == party)
             end)
 
           case moves do
@@ -320,17 +299,17 @@ defmodule HexEmpire.Engine.OriginalAi do
               acc
 
             _ ->
-              sorted =
-                Enum.sort_by(moves, fn f ->
-                  Hex.original_distance(Map.fetch!(game.fields, f), target)
-                end)
-
-              [best | _] = sorted
-              dist = Hex.original_distance(Map.fetch!(game.fields, best), target)
-              army = origin.army
+              [best | _] = Enum.sort_by(moves, fn f -> Query.distance(game, f, target_key) end)
 
               acc ++
-                [%{army: army_key, target: best, score: -dist, power: army.count + army.morale}]
+                [
+                  %{
+                    army: army_key,
+                    target: best,
+                    score: -Query.distance(game, best, target_key),
+                    power: Query.power(origin.army)
+                  }
+                ]
           end
         else
           acc
@@ -358,45 +337,12 @@ defmodule HexEmpire.Engine.OriginalAi do
 
       _ ->
         s =
-          case Pathfinding.find_path(game.fields, field_key, capital_key, [], true) do
+          case Query.path(game, field_key, capital_key) do
             nil -> -999
             path -> -length(path)
           end
 
         {s, Map.put(cache, cache_key, s)}
     end
-  end
-
-  # The 2-ring key lists are precomputed once per board by the Generator using
-  # the same Hex.further_neighbours/2 (single source of truth), so their order
-  # is identical by construction — the folds below depend on it.
-  defp ring2(game, field_key), do: Map.fetch!(game.ring2, field_key)
-
-  defp near(game, field_key, pred) do
-    game
-    |> ring2(field_key)
-    |> Enum.any?(fn k -> pred.(Map.fetch!(game.fields, k)) end)
-  end
-
-  defp nearby_friendly_power(game, party, field_key) do
-    game
-    |> ring2(field_key)
-    |> Enum.reduce(0, fn k, acc ->
-      case Map.fetch!(game.fields, k).army do
-        %{party: ^party} = a -> acc + a.count + a.morale
-        _ -> acc
-      end
-    end)
-  end
-
-  defp nearby_enemy_power(game, party, field_key) do
-    game
-    |> ring2(field_key)
-    |> Enum.reduce(0, fn k, acc ->
-      case Map.fetch!(game.fields, k).army do
-        nil -> acc
-        a -> if a.party != party, do: acc + a.count + a.morale, else: acc
-      end
-    end)
   end
 end

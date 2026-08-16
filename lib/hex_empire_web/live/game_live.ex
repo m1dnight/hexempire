@@ -354,6 +354,7 @@ defmodule HexEmpireWeb.GameLive do
             <option value="0" selected={@difficulty == 0}>Easy</option>
             <option value="5" selected={@difficulty == 5}>Normal</option>
             <option value="10" selected={@difficulty == 10}>Hard</option>
+            <option value="15" selected={@difficulty == 15}>Brutal (new AI)</option>
           </select>
           <button type="submit" class="he-btn ghost">New Game</button>
         </form>

@@ -78,6 +78,10 @@ defmodule HexEmpire.Matches do
   @spec end_turn(String.t(), String.t()) :: :ok | {:error, term()}
   def end_turn(id, token), do: call(id, {:end_turn, token})
 
+  @doc "Host-only, lobby-only: computer seats play Brutal (TurnPlannerAi)."
+  @spec set_brutal(String.t(), String.t(), boolean()) :: :ok | {:error, term()}
+  def set_brutal(id, token, brutal?), do: call(id, {:set_brutal, token, brutal?})
+
   @doc "Store the seat's Web Push subscription (turn notifications)."
   @spec set_push_sub(String.t(), String.t(), map()) :: :ok | :error | {:error, term()}
   def set_push_sub(id, token, sub), do: call(id, {:set_push_sub, token, sub})
