@@ -196,7 +196,9 @@ select.he-sel { background:#3a5233; color:#eef2e6; border:none; border-radius:6p
 
 /* Zoom controls overlay */
 .he-zoom { position: relative; }
-.he-zoomctl { position:absolute; right:10px; bottom:10px; display:flex; flex-direction:column;
+/* horizontal, right-anchored (row-reverse: the fit button appears leftward
+   without shifting +/-), low profile so it clears the corner tiles */
+.he-zoomctl { position:absolute; right:10px; bottom:10px; display:flex; flex-direction:row-reverse;
               gap:6px; z-index:5; }
 .he-zoomctl button { width:40px; height:40px; border-radius:10px; border:1px solid #0006;
                      background:#24361fd9; color:#eef2e6; font-size:20px; font-weight:700;
