@@ -135,6 +135,120 @@ defmodule HexEmpireWeb.BoardComponents do
     %{id: "fx-#{System.unique_integer([:positive])}", kind: kind, x: cx, y: cy, color: color}
   end
 
+  # ---------------------------------------------------------------------------
+  # End-of-game summary + troop-count chart
+  # ---------------------------------------------------------------------------
+
+  attr :banner, :string, required: true, doc: "the win/lose headline"
+  attr :history, :list, required: true, doc: "round samples, newest first (Campaigns history)"
+
+  @doc """
+  End-of-game panel: the result headline plus a small SVG line chart of each
+  faction's troop count per round. Degrades gracefully with 0 or 1 samples.
+  """
+  def game_summary(assigns) do
+    samples = Enum.reverse(assigns.history)
+    assigns = assign(assigns, chart: chart_data(samples), final: List.last(samples))
+
+    ~H"""
+    <div class="he-over">{@banner}</div>
+    <div class="he-card">
+      <div class="he-sub" style="margin-bottom:6px">Troops over the campaign</div>
+      <svg
+        :if={@chart != nil}
+        viewBox={"0 0 #{@chart.w} #{@chart.h}"}
+        style="width:100%;height:auto;display:block"
+      >
+        <rect x="0" y="0" width={@chart.w} height={@chart.h} rx="4" fill="#1d2a1c" />
+        <line
+          x1="0"
+          y1={@chart.baseline}
+          x2={@chart.w}
+          y2={@chart.baseline}
+          stroke="#ffffff18"
+          stroke-width="1"
+        />
+        <polyline
+          :for={l <- @chart.lines}
+          points={l.points}
+          fill="none"
+          stroke={faction(l.party).color}
+          stroke-width="2"
+          stroke-linejoin="round"
+          stroke-linecap="round"
+          opacity="0.9"
+        />
+        <circle
+          :for={d <- @chart.dots}
+          cx={d.x}
+          cy={d.y}
+          r="2.6"
+          fill={faction(d.party).color}
+        />
+        <text x="3" y="10" font-size="8" fill="#ffffff70">{@chart.vmax}</text>
+        <text x={@chart.w - 3} y={@chart.h - 3} font-size="8" fill="#ffffff70" text-anchor="end">
+          round {@chart.tmax}
+        </text>
+      </svg>
+      <div :if={@final != nil} style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">
+        <div :for={p <- 0..3} style="display:flex;align-items:center;gap:4px">
+          <span style={"width:10px;height:10px;border-radius:2px;background:#{faction(p).color}"}>
+          </span>
+          <span class="he-sub">{faction(p).name}: {Enum.at(@final.counts, p)}</span>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  @chart_w 260
+  @chart_h 110
+
+  defp chart_data([]), do: nil
+
+  defp chart_data(samples) do
+    ts = Enum.map(samples, & &1.t)
+    tmin = Enum.min(ts)
+    tmax = Enum.max(ts)
+    vmax = max(1, samples |> Enum.flat_map(& &1.counts) |> Enum.max())
+
+    pad = 6
+    plot_w = @chart_w - 2 * pad
+    plot_h = @chart_h - 2 * pad
+
+    xf = fn t ->
+      if tmax == tmin, do: @chart_w / 2, else: pad + (t - tmin) / (tmax - tmin) * plot_w
+    end
+
+    yf = fn v -> pad + (1 - v / vmax) * plot_h end
+
+    lines =
+      for p <- 0..3 do
+        pts =
+          Enum.map_join(samples, " ", fn s ->
+            "#{r1(xf.(s.t))},#{r1(yf.(Enum.at(s.counts, p)))}"
+          end)
+
+        %{party: p, points: pts}
+      end
+
+    last = List.last(samples)
+    dots = for p <- 0..3, do: %{party: p, x: r1(xf.(last.t)), y: r1(yf.(Enum.at(last.counts, p)))}
+
+    %{
+      w: @chart_w,
+      h: @chart_h,
+      vmax: vmax,
+      tmin: tmin,
+      tmax: tmax,
+      baseline: r1(yf.(0)),
+      lines: lines,
+      dots: dots
+    }
+  end
+
+  defp r1(n), do: Float.round(n * 1.0, 1)
+
   attr :hexes, :list, required: true
   attr :armies, :list, required: true
   attr :effects, :list, default: []

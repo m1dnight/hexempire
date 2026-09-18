@@ -26,22 +26,37 @@ defmodule HexEmpire.Campaigns do
   def ai_module(difficulty) when difficulty >= @brutal, do: TurnPlannerAi
   def ai_module(_difficulty), do: OriginalAi
 
-  @typedoc "A player's campaign: the saved game plus its difficulty setting."
+  @typedoc """
+  A per-round snapshot for the end-game summary chart: the round number and
+  each party's troop count and faction morale at the start of that round.
+  """
+  @type sample :: %{t: non_neg_integer(), counts: [non_neg_integer()], morale: [integer()]}
+
+  @typedoc """
+  A player's campaign: the saved game, its difficulty, and the round-by-round
+  history (newest first) used for the end-of-game summary.
+  """
   @type t :: %{
           player_id: String.t() | nil,
           game: Engine.game(),
-          difficulty: non_neg_integer()
+          difficulty: non_neg_integer(),
+          history: [sample()]
         }
 
   @doc """
   Resume the player's saved campaign, or nil when there is none (or no
-  player id).
+  player id). `history` defaults to `[]` for saves made before it existed.
   """
   @spec resume(String.t() | nil) :: t() | nil
   def resume(player_id) do
     case GameStore.fetch(player_id) do
-      %{game: game, difficulty: difficulty} ->
-        %{player_id: player_id, game: game, difficulty: difficulty}
+      %{game: game, difficulty: difficulty} = saved ->
+        %{
+          player_id: player_id,
+          game: game,
+          difficulty: difficulty,
+          history: Map.get(saved, :history, [])
+        }
 
       _ ->
         nil
@@ -63,7 +78,7 @@ defmodule HexEmpire.Campaigns do
         difficulty: min(difficulty, 10)
       )
 
-    save(%{player_id: player_id, game: game, difficulty: difficulty})
+    save(%{player_id: player_id, game: game, difficulty: difficulty, history: []})
   end
 
   @doc """
@@ -121,13 +136,47 @@ defmodule HexEmpire.Campaigns do
     save(%{campaign | game: g})
   end
 
-  @doc "Persist the campaign (no-op without a player id). Returns the campaign."
+  @doc """
+  Record the round history and persist (persistence is a no-op without a
+  player id). Returns the updated campaign.
+  """
   @spec save(t()) :: t()
-  def save(%{player_id: nil} = campaign), do: campaign
+  def save(campaign) do
+    campaign = record(campaign)
 
-  def save(%{player_id: player_id} = campaign) do
-    GameStore.save(player_id, %{game: campaign.game, difficulty: campaign.difficulty})
+    if campaign.player_id do
+      GameStore.save(campaign.player_id, %{
+        game: campaign.game,
+        difficulty: campaign.difficulty,
+        history: campaign.history
+      })
+    end
+
     campaign
+  end
+
+  # Append a snapshot whenever a new round begins (game.turns advances), plus a
+  # final one the moment the game ends — the decisive last turns can happen
+  # after the acting party's own round counter has stopped (e.g. once the human
+  # is eliminated), so without it the chart would miss the conquest that ended
+  # the game. Sampled at the start of the round, after reinforcements/battles
+  # settle, so the series reads ~one point per round.
+  defp record(%{game: g, history: history} = campaign) do
+    {last_t, last_counts} =
+      case history do
+        [%{t: t, counts: c} | _] -> {t, c}
+        _ -> {-1, nil}
+      end
+
+    sample_now? =
+      g.turns != last_t or (g.winner != nil and g.total_count != last_counts)
+
+    if sample_now? do
+      sample = %{t: g.turns, counts: g.total_count, morale: g.morale}
+      %{campaign | history: [sample | history]}
+    else
+      campaign
+    end
   end
 
   @doc "Delete the player's saved campaign."

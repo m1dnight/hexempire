@@ -22,6 +22,7 @@ defmodule HexEmpireWeb.GameLive do
       build_hexes: 4,
       build_armies: 2,
       diff_effects: 2,
+      game_summary: 1,
       faction: 1,
       action_bar: 1,
       base_url: 1,
@@ -40,7 +41,7 @@ defmodule HexEmpireWeb.GameLive do
     socket = assign(socket, player_id: campaign_id, base_url: base_url(socket))
 
     case Campaigns.resume(campaign_id) do
-      %{game: game, difficulty: difficulty} ->
+      %{game: game, difficulty: difficulty, history: history} ->
         # Resume works on both the static and the connected mount so the
         # page renders the same board twice (no flash). The AI timer is only
         # scheduled once connected — the static process dies after rendering.
@@ -49,6 +50,7 @@ defmodule HexEmpireWeb.GameLive do
           |> assign(
             game: game,
             difficulty: difficulty,
+            history: history,
             selected: nil,
             valid_moves: [],
             effects: [],
@@ -86,6 +88,7 @@ defmodule HexEmpireWeb.GameLive do
     |> assign(
       game: campaign.game,
       difficulty: campaign.difficulty,
+      history: campaign.history,
       selected: nil,
       valid_moves: [],
       effects: [],
@@ -100,7 +103,8 @@ defmodule HexEmpireWeb.GameLive do
     %{
       player_id: socket.assigns.player_id,
       game: socket.assigns.game,
-      difficulty: socket.assigns.difficulty
+      difficulty: socket.assigns.difficulty,
+      history: socket.assigns.history
     }
   end
 
@@ -123,12 +127,12 @@ defmodule HexEmpireWeb.GameLive do
     g = socket.assigns.game
 
     if human_turn?(g) do
-      %{game: g} = Campaigns.end_turn(campaign(socket))
+      campaign = Campaigns.end_turn(campaign(socket))
 
       {:noreply,
        socket
-       |> assign_game(g)
-       |> assign(selected: nil, valid_moves: [])
+       |> assign_game(campaign.game)
+       |> assign(history: campaign.history, selected: nil, valid_moves: [])
        |> assign_board()
        |> maybe_schedule_ai()}
     else
@@ -171,8 +175,9 @@ defmodule HexEmpireWeb.GameLive do
         {:noreply, socket |> assign(status_msg: "Your move, commander.") |> assign_board()}
 
       true ->
-        %{game: g} = Campaigns.ai_step(campaign(socket))
-        socket = socket |> assign_game(g) |> assign_board()
+        campaign = Campaigns.ai_step(campaign(socket))
+        g = campaign.game
+        socket = socket |> assign_game(g) |> assign(history: campaign.history) |> assign_board()
 
         if g.winner == nil and g.turn_party != g.human do
           Process.send_after(self(), :ai_step, @ai_delay)
@@ -208,11 +213,12 @@ defmodule HexEmpireWeb.GameLive do
     cond do
       # move to a highlighted field
       sel != nil and key in socket.assigns.valid_moves ->
-        {%{game: g}, _moved?} = Campaigns.human_move(campaign(socket), sel, key)
+        {campaign, _moved?} = Campaigns.human_move(campaign(socket), sel, key)
+        g = campaign.game
 
         socket
         |> assign_game(g)
-        |> assign(selected: nil, valid_moves: [])
+        |> assign(history: campaign.history, selected: nil, valid_moves: [])
         |> assign(status_msg: if(g.winner, do: winner_text(g), else: status_after_move(g)))
         |> assign_board()
         |> maybe_schedule_ai()
@@ -333,7 +339,7 @@ defmodule HexEmpireWeb.GameLive do
           </div>
         </div>
 
-        <div :if={@game.winner != nil} class="he-over">{winner_text(@game)}</div>
+        <.game_summary :if={@game.winner != nil} banner={winner_text(@game)} history={@history} />
 
         <div class="he-card">
           <div :for={p <- 0..3} class={pl_class(@game, p)}>
