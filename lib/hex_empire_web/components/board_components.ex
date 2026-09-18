@@ -66,9 +66,15 @@ defmodule HexEmpireWeb.BoardComponents do
   end
 
   @doc """
-  The armies layer data: one entry per living army, keyed by engine army id
-  (stable across moves — that's what makes the CSS glide work). `viewer`'s
-  already-moved armies render dimmed.
+  The armies layer data: one entry per living army, keyed by engine army id.
+
+  ORDERED BY ID, not board position — this is load-bearing for the glide.
+  LiveView diffs a `:for` comprehension by list index, so if the order tracked
+  board position a moved army would change slots and LiveView would tear its
+  element down and rebuild it at the destination (a flicker, no transition).
+  Sorting by the stable id pins each army to its slot, so a move only patches
+  its `transform`, and the CSS transition glides it. `viewer`'s already-moved
+  armies render dimmed.
   """
   def build_armies(game, viewer) do
     for key <- game.field_order,
@@ -83,6 +89,7 @@ defmodule HexEmpireWeb.BoardComponents do
         opacity: if(f.army.moved and f.army.party == viewer, do: "0.55", else: "1")
       }
     end
+    |> Enum.sort_by(& &1.id)
   end
 
   @doc """

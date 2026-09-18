@@ -214,14 +214,16 @@ select.he-sel { background:#3a5233; color:#eef2e6; border:none; border-radius:6p
            animation: heWave 3.9s ease-in-out infinite; }
 @keyframes heWave { 0%, 100% { opacity: 0.1 } 50% { opacity: 0.55 } }
 
-/* Motion: armies glide between hexes (stable ids + patched transform),
-   pop in when they first appear, and transient combat/capture effects */
+/* Motion: armies glide between hexes (stable ids + patched transform) and
+   transient combat/capture effects.
+   NOTE: no fade-in-on-creation animation. LiveView/morphdom can recreate a
+   non-moved army's SVG node while diffing the layer after a move; a
+   creation-triggered fade would replay on every such node and read as a
+   board-wide flicker. Without it, a recreated node simply reappears in place
+   (invisible), and a moved army still glides via the transform transition on
+   its patched node. */
 .he-army { transition: transform 260ms ease-in-out, opacity 200ms linear;
-           animation: heArmyPop 240ms ease-out; will-change: transform; }
-@keyframes heArmyPop {
-  0% { opacity: 0; }
-  60% { opacity: 1; }
-}
+           will-change: transform; }
 .he-fx { pointer-events: none; }
 .he-fx-ring { fill: none; stroke-width: 3; transform-box: fill-box; transform-origin: center;
               animation: heRing 700ms ease-out forwards; }
@@ -234,7 +236,7 @@ select.he-sel { background:#3a5233; color:#eef2e6; border:none; border-radius:6p
 .he-fx-death .he-fx-ring { stroke-width: 5; animation-duration: 600ms; }
 
 @media (prefers-reduced-motion: reduce) {
-  .he-army { transition: none; animation: none; }
+  .he-army { transition: none; }
   .he-fx { display: none; }
   .he-wave { animation: none; opacity: 0.3; }
 }
