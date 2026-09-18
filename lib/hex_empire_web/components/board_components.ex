@@ -46,7 +46,7 @@ defmodule HexEmpireWeb.BoardComponents do
         cx: cx,
         cy: cy,
         points: hex_points(cx, cy),
-        lips: if(land?, do: lips(game, f, cx, cy), else: []),
+        shadow_points: if(land?, do: hex_points(cx, cy + @depth)),
         top_fill: top,
         side_fill: side,
         deco: deco(f),
@@ -95,24 +95,48 @@ defmodule HexEmpireWeb.BoardComponents do
   defp board_svg(assigns) do
     ~H"""
     <svg viewBox={"0 0 #{@vb_w} #{@vb_h}"} class="he-svg" preserveAspectRatio="xMidYMid meet">
-      <%!-- pass 1: tile tops, water waves, terrain, highlights, pieces --%>
-      <g :for={hx <- @hexes}>
+      <%!-- painter's layering: water floor -> land block shadows -> land tops.
+           The "coastline lip" is each land tile's own silhouette translated
+           down: joins are perfect by construction, and water needs no
+           internal borders so lakes read as one body. --%>
+      <g :for={hx <- @hexes} :if={hx.type == :water}>
         <polygon
           points={hx.points}
           fill={hx.top_fill}
-          stroke={if hx.selected, do: "#ffe000", else: "#00000026"}
-          stroke-width={if hx.selected, do: "3.5", else: "0.8"}
           class="he-hex"
           phx-click="hex"
           phx-value-k={hx.key}
         />
         <path
-          :if={hx.wave_delay != nil}
           d={wave_path(hx.cx, hx.cy)}
           class="he-wave"
           style={"animation-delay:#{hx.wave_delay};pointer-events:none"}
         />
+        <.army_token :if={hx.army != nil} hx={hx} viewer={@viewer} />
+      </g>
+      <polygon
+        :for={hx <- @hexes}
+        :if={hx.shadow_points != nil}
+        points={hx.shadow_points}
+        fill={hx.side_fill}
+        style="pointer-events:none"
+      />
+      <g :for={hx <- @hexes} :if={hx.type == :land}>
+        <polygon
+          points={hx.points}
+          fill={hx.top_fill}
+          stroke="#00000022"
+          stroke-width="0.8"
+          class="he-hex"
+          phx-click="hex"
+          phx-value-k={hx.key}
+        />
         <.terrain :if={hx.deco != nil and hx.army == nil} hx={hx} />
+        <.settlement :if={hx.estate != nil} hx={hx} />
+        <.army_token :if={hx.army != nil} hx={hx} viewer={@viewer} />
+      </g>
+      <%!-- overlays last: reachable-glow and the selection outline --%>
+      <g :for={hx <- @hexes} :if={hx.valid or hx.selected} style="pointer-events:none">
         <polygon
           :if={hx.valid}
           points={hx.points}
@@ -132,16 +156,8 @@ defmodule HexEmpireWeb.BoardComponents do
           }
           stroke-width="2.5"
           class="he-glow"
-          style="pointer-events:none"
         />
-        <.settlement :if={hx.estate != nil} hx={hx} />
-        <.army_token :if={hx.army != nil} hx={hx} viewer={@viewer} />
-      </g>
-      <%!-- pass 2: coastline lips — per lower edge, only where the neighbour
-           is water or the board edge, drawn after every top so nothing can
-           half-cover them (hexes overlap diagonally) --%>
-      <g :for={hx <- @hexes} :if={hx.lips != []} style="pointer-events:none">
-        <polygon :for={pts <- hx.lips} points={pts} fill={hx.side_fill} />
+        <polygon :if={hx.selected} points={hx.points} fill="none" stroke="#ffe000" stroke-width="3.5" />
       </g>
     </svg>
     """
@@ -247,7 +263,7 @@ defmodule HexEmpireWeb.BoardComponents do
 
   # {top-fill variants, side-fill} per owner; a coordinate hash picks the
   # variant so the terrain has quiet texture instead of flat fills.
-  @water_tops ["#3a7ec2", "#3577ba", "#4085c8"]
+  @water_tops ["#3f82c4", "#3d7fc0", "#4184c6"]
   @tiles %{
     -1 => {["#e3d9b0", "#dcd2a8", "#d6cb9f"], "#a5986e"},
     0 => {["#eab5ac", "#e5aca2", "#efbeb5"], "#b0776d"},
@@ -275,34 +291,6 @@ defmodule HexEmpireWeb.BoardComponents do
   end
 
   defp deco(_), do: nil
-
-  # Per-edge extrusion quads for a land tile's three lower edges. The engine's
-  # neighbour direction order makes indices 0/1/2 the lower-right, below, and
-  # lower-left neighbours for BOTH column parities; a lip shows only where
-  # that neighbour is water or off-board.
-  defp lips(game, f, cx, cy) do
-    d = @depth
-
-    edges = [
-      # {neighbour index, edge quad}
-      {1,
-       [
-         {cx - 12.5, cy + 20},
-         {cx + 12.5, cy + 20},
-         {cx + 12.5, cy + 20 + d},
-         {cx - 12.5, cy + 20 + d}
-       ]},
-      {0, [{cx + 12.5, cy + 20}, {cx + 25, cy}, {cx + 25, cy + d}, {cx + 12.5, cy + 20 + d}]},
-      {2, [{cx - 25, cy}, {cx - 12.5, cy + 20}, {cx - 12.5, cy + 20 + d}, {cx - 25, cy + d}]}
-    ]
-
-    for {i, quad} <- edges, exposed?(game, Enum.at(f.neighbours, i)) do
-      Enum.map_join(quad, " ", fn {x, y} -> "#{x},#{y}" end)
-    end
-  end
-
-  defp exposed?(_game, nil), do: true
-  defp exposed?(game, key), do: Map.fetch!(game.fields, key).type == :water
 
   # Two small wave strokes; the CSS animation pulses their opacity.
   defp wave_path(cx, cy) do
