@@ -46,7 +46,7 @@ defmodule HexEmpireWeb.BoardComponents do
         cx: cx,
         cy: cy,
         points: hex_points(cx, cy),
-        side_points: if(land?, do: side_points(cx, cy)),
+        lips: if(land?, do: lips(game, f, cx, cy), else: []),
         top_fill: top,
         side_fill: side,
         deco: deco(f),
@@ -95,15 +95,7 @@ defmodule HexEmpireWeb.BoardComponents do
   defp board_svg(assigns) do
     ~H"""
     <svg viewBox={"0 0 #{@vb_w} #{@vb_h}"} class="he-svg" preserveAspectRatio="xMidYMid meet">
-      <%!-- pass 1: extruded side faces (never allowed to cover a tile top) --%>
-      <polygon
-        :for={hx <- @hexes}
-        :if={hx.side_points != nil}
-        points={hx.side_points}
-        fill={hx.side_fill}
-        style="pointer-events:none"
-      />
-      <%!-- pass 2: tile tops, water waves, terrain, highlights, pieces --%>
+      <%!-- pass 1: tile tops, water waves, terrain, highlights, pieces --%>
       <g :for={hx <- @hexes}>
         <polygon
           points={hx.points}
@@ -144,6 +136,12 @@ defmodule HexEmpireWeb.BoardComponents do
         />
         <.settlement :if={hx.estate != nil} hx={hx} />
         <.army_token :if={hx.army != nil} hx={hx} viewer={@viewer} />
+      </g>
+      <%!-- pass 2: coastline lips — per lower edge, only where the neighbour
+           is water or the board edge, drawn after every top so nothing can
+           half-cover them (hexes overlap diagonally) --%>
+      <g :for={hx <- @hexes} :if={hx.lips != []} style="pointer-events:none">
+        <polygon :for={pts <- hx.lips} points={pts} fill={hx.side_fill} />
       </g>
     </svg>
     """
@@ -278,20 +276,33 @@ defmodule HexEmpireWeb.BoardComponents do
 
   defp deco(_), do: nil
 
-  # The bottom edge chain of the hex, extruded @depth px down.
-  defp side_points(cx, cy) do
-    [
-      {cx - 25, cy},
-      {cx - 12.5, cy + 20},
-      {cx + 12.5, cy + 20},
-      {cx + 25, cy},
-      {cx + 25, cy + 20 + @depth},
-      {cx + 12.5, cy + 20 + @depth},
-      {cx - 12.5, cy + 20 + @depth},
-      {cx - 25, cy + @depth}
+  # Per-edge extrusion quads for a land tile's three lower edges. The engine's
+  # neighbour direction order makes indices 0/1/2 the lower-right, below, and
+  # lower-left neighbours for BOTH column parities; a lip shows only where
+  # that neighbour is water or off-board.
+  defp lips(game, f, cx, cy) do
+    d = @depth
+
+    edges = [
+      # {neighbour index, edge quad}
+      {1,
+       [
+         {cx - 12.5, cy + 20},
+         {cx + 12.5, cy + 20},
+         {cx + 12.5, cy + 20 + d},
+         {cx - 12.5, cy + 20 + d}
+       ]},
+      {0, [{cx + 12.5, cy + 20}, {cx + 25, cy}, {cx + 25, cy + d}, {cx + 12.5, cy + 20 + d}]},
+      {2, [{cx - 25, cy}, {cx - 12.5, cy + 20}, {cx - 12.5, cy + 20 + d}, {cx - 25, cy + d}]}
     ]
-    |> Enum.map_join(" ", fn {x, y} -> "#{x},#{y}" end)
+
+    for {i, quad} <- edges, exposed?(game, Enum.at(f.neighbours, i)) do
+      Enum.map_join(quad, " ", fn {x, y} -> "#{x},#{y}" end)
+    end
   end
+
+  defp exposed?(_game, nil), do: true
+  defp exposed?(game, key), do: Map.fetch!(game.fields, key).type == :water
 
   # Two small wave strokes; the CSS animation pulses their opacity.
   defp wave_path(cx, cy) do
