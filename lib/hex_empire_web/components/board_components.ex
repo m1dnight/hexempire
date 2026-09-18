@@ -65,8 +65,73 @@ defmodule HexEmpireWeb.BoardComponents do
     end
   end
 
+  @doc """
+  The armies layer data: one entry per living army, keyed by engine army id
+  (stable across moves — that's what makes the CSS glide work). `viewer`'s
+  already-moved armies render dimmed.
+  """
+  def build_armies(game, viewer) do
+    for key <- game.field_order,
+        f = Map.fetch!(game.fields, key),
+        f.army != nil do
+      {cx, cy} = position(f.x, f.y)
+
+      %{
+        id: f.army.id,
+        army: f.army,
+        style: "transform: translate(#{cx}px, #{cy}px)",
+        opacity: if(f.army.moved and f.army.party == viewer, do: "0.55", else: "1")
+      }
+    end
+  end
+
+  @doc """
+  Diff two engine states into transient board effects:
+
+    * `:death`   — an army id vanished (combat loss or merged away): gray puff
+    * `:battle`  — a surviving army lost troops: orange clash flash
+    * `:capture` — a town/port/capital changed owner: gold ripple
+  """
+  def diff_effects(nil, _new), do: []
+
+  def diff_effects(prev, new) do
+    deaths =
+      for {id, key} <- prev.army_pos, not Map.has_key?(new.army_pos, id) do
+        f = Map.fetch!(prev.fields, key)
+        fx(:death, f, "#e8e2d2")
+      end
+
+    battles =
+      for {id, key} <- new.army_pos,
+          prev_key = Map.get(prev.army_pos, id),
+          prev_key != nil,
+          prev_army = Map.fetch!(prev.fields, prev_key).army,
+          new_army = Map.fetch!(new.fields, key).army,
+          new_army != nil and new_army.id == id and new_army.count < prev_army.count do
+        fx(:battle, Map.fetch!(new.fields, key), "#ff9d3a")
+      end
+
+    captures =
+      for key <- new.field_order,
+          nf = Map.fetch!(new.fields, key),
+          nf.estate != nil,
+          pf = Map.fetch!(prev.fields, key),
+          nf.party != pf.party do
+        fx(:capture, nf, "#ffd84a")
+      end
+
+    deaths ++ battles ++ captures
+  end
+
+  defp fx(kind, field, color) do
+    {cx, cy} = position(field.x, field.y)
+    %{id: "fx-#{System.unique_integer([:positive])}", kind: kind, x: cx, y: cy, color: color}
+  end
+
   attr :hexes, :list, required: true
-  attr :viewer, :integer, default: nil, doc: "party whose moved armies render dimmed"
+  attr :armies, :list, required: true
+  attr :effects, :list, default: []
+  attr :viewer, :integer, default: nil, doc: "unused; kept for call-site compatibility"
 
   @doc """
   The complete SVG game board, wrapped in the BoardZoom hook (pinch-zoom,
@@ -77,7 +142,13 @@ defmodule HexEmpireWeb.BoardComponents do
 
     ~H"""
     <div id="board-zoom" phx-hook="BoardZoom" class="he-zoom">
-      <.board_svg hexes={@hexes} viewer={@viewer} vb_w={@vb_w} vb_h={@vb_h} />
+      <.board_svg
+        hexes={@hexes}
+        armies={@armies}
+        effects={@effects}
+        vb_w={@vb_w}
+        vb_h={@vb_h}
+      />
       <div class="he-zoomctl">
         <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
         <button type="button" data-zoom="out" aria-label="Zoom out">−</button>
@@ -88,7 +159,8 @@ defmodule HexEmpireWeb.BoardComponents do
   end
 
   attr :hexes, :list, required: true
-  attr :viewer, :integer, default: nil
+  attr :armies, :list, required: true
+  attr :effects, :list, required: true
   attr :vb_w, :any, required: true
   attr :vb_h, :any, required: true
 
@@ -122,7 +194,6 @@ defmodule HexEmpireWeb.BoardComponents do
           class="he-wave"
           style={"animation-delay:#{hx.wave_delay};pointer-events:none"}
         />
-        <.army_token :if={hx.army != nil} hx={hx} viewer={@viewer} />
       </g>
       <polygon
         :for={hx <- @hexes}
@@ -143,7 +214,27 @@ defmodule HexEmpireWeb.BoardComponents do
         />
         <.terrain :if={hx.deco != nil and hx.army == nil} hx={hx} />
         <.settlement :if={hx.estate != nil} hx={hx} />
-        <.army_token :if={hx.army != nil} hx={hx} viewer={@viewer} />
+      </g>
+      <%!-- armies: a keyed layer of their own. Stable ids mean LiveView
+           patches (not replaces) a moved army's element, and the CSS
+           transition on transform glides it between hexes. --%>
+      <g :for={a <- @armies} id={"army-#{a.id}"} class="he-army" style={a.style} opacity={a.opacity}>
+        <.army_token army={a.army} />
+      </g>
+      <%!-- transient combat/capture effects (self-animating, swept by timer) --%>
+      <g
+        :for={fx <- @effects}
+        id={fx.id}
+        class={"he-fx he-fx-#{fx.kind}"}
+        style={"transform: translate(#{fx.x}px, #{fx.y}px)"}
+      >
+        <circle r="14" class="he-fx-ring" style={"stroke:#{fx.color}"} />
+        <circle
+          :if={fx.kind == :capture}
+          r="9"
+          class="he-fx-ring he-fx-ring2"
+          style={"stroke:#{fx.color}"}
+        />
       </g>
       <%!-- overlays last: reachable-glow and the selection outline --%>
       <g :for={hx <- @hexes} :if={hx.valid or hx.selected} style="pointer-events:none">
@@ -428,37 +519,37 @@ defmodule HexEmpireWeb.BoardComponents do
   defp sail_color(%{party: -1}), do: "#9aa0a6"
   defp sail_color(%{party: p}), do: faction(p).color
 
-  # --- army token: shield with count, morale pip below ---
+  # --- army token: disc with count, morale pip below (coords relative to the
+  # translated .he-army group so the transform transition can glide it) ---
+
+  attr :army, :map, required: true
 
   defp army_token(assigns) do
-    assigns = assign(assigns, chips: div(max(assigns.hx.army.count - 1, 0), 33))
+    assigns = assign(assigns, chips: div(max(assigns.army.count - 1, 0), 33))
 
     ~H"""
-    <g
-      style="pointer-events:none"
-      opacity={if @hx.army.moved and @hx.army.party == @viewer, do: "0.55", else: "1"}
-    >
-      <ellipse cx={@hx.cx} cy={@hx.cy + 17} rx="10.5" ry="3.2" fill="#00000038" />
+    <g style="pointer-events:none">
+      <ellipse cx="0" cy="17" rx="10.5" ry="3.2" fill="#00000038" />
       <circle
         :for={i <- @chips..1//-1}
-        cx={@hx.cx}
-        cy={@hx.cy + 6 + i * 2.5}
+        cx="0"
+        cy={6 + i * 2.5}
         r="11"
-        fill={faction(@hx.army.party).dark}
+        fill={faction(@army.party).dark}
         stroke="#14200f"
         stroke-width="1.2"
       />
       <circle
-        cx={@hx.cx}
-        cy={@hx.cy + 6}
+        cx="0"
+        cy="6"
         r="11"
-        fill={faction(@hx.army.party).color}
+        fill={faction(@army.party).color}
         stroke="#14200f"
         stroke-width="1.6"
       />
       <text
-        x={@hx.cx}
-        y={@hx.cy + 10}
+        x="0"
+        y="10"
         text-anchor="middle"
         font-size="11"
         font-weight="800"
@@ -467,11 +558,11 @@ defmodule HexEmpireWeb.BoardComponents do
         stroke-width="0.5"
         paint-order="stroke"
       >
-        {@hx.army.count}
+        {@army.count}
       </text>
       <text
-        x={@hx.cx}
-        y={@hx.cy + 19.5}
+        x="0"
+        y="19.5"
         text-anchor="middle"
         font-size="6.5"
         font-weight="700"
@@ -480,7 +571,7 @@ defmodule HexEmpireWeb.BoardComponents do
         stroke-width="0.4"
         paint-order="stroke"
       >
-        ★{@hx.army.morale}
+        ★{@army.morale}
       </text>
     </g>
     """

@@ -213,3 +213,28 @@ select.he-sel { background:#3a5233; color:#eef2e6; border:none; border-radius:6p
 .he-wave { fill: none; stroke: #ffffff55; stroke-width: 1.4; stroke-linecap: round;
            animation: heWave 3.9s ease-in-out infinite; }
 @keyframes heWave { 0%, 100% { opacity: 0.1 } 50% { opacity: 0.55 } }
+
+/* Motion: armies glide between hexes (stable ids + patched transform),
+   pop in when they first appear, and transient combat/capture effects */
+.he-army { transition: transform 260ms ease-in-out, opacity 200ms linear;
+           animation: heArmyPop 240ms ease-out; will-change: transform; }
+@keyframes heArmyPop {
+  0% { opacity: 0; }
+  60% { opacity: 1; }
+}
+.he-fx { pointer-events: none; }
+.he-fx-ring { fill: none; stroke-width: 3; transform-box: fill-box; transform-origin: center;
+              animation: heRing 700ms ease-out forwards; }
+.he-fx-ring2 { animation-delay: 140ms; }
+@keyframes heRing {
+  0% { transform: scale(0.3); opacity: 0.95; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+.he-fx-battle .he-fx-ring { stroke-width: 4; animation-duration: 480ms; }
+.he-fx-death .he-fx-ring { stroke-width: 5; animation-duration: 600ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .he-army { transition: none; animation: none; }
+  .he-fx { display: none; }
+  .he-wave { animation: none; opacity: 0.3; }
+}
