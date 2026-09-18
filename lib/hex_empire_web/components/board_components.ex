@@ -46,9 +46,9 @@ defmodule HexEmpireWeb.BoardComponents do
         cx: cx,
         cy: cy,
         points: hex_points(cx, cy),
-        shadow_points: if(land?, do: hex_points(cx, cy + @depth)),
+        shadow_points: hex_points(cx, cy + @depth),
+        shadow_fill: if(land?, do: side, else: "#2a5c8f"),
         top_fill: top,
-        side_fill: side,
         deco: deco(f),
         wave_delay: unless(land?, do: "#{rem(:erlang.phash2({f.x, f.y, :wave}), 3900)}ms"),
         type: f.type,
@@ -99,10 +99,20 @@ defmodule HexEmpireWeb.BoardComponents do
            The "coastline lip" is each land tile's own silhouette translated
            down: joins are perfect by construction, and water needs no
            internal borders so lakes read as one body. --%>
+      <%!-- water cross-section: visible only along the board's outer edge --%>
+      <polygon
+        :for={hx <- @hexes}
+        :if={hx.type == :water}
+        points={hx.shadow_points}
+        fill={hx.shadow_fill}
+        style="pointer-events:none"
+      />
       <g :for={hx <- @hexes} :if={hx.type == :water}>
         <polygon
           points={hx.points}
           fill={hx.top_fill}
+          stroke={hx.top_fill}
+          stroke-width="0.6"
           class="he-hex"
           phx-click="hex"
           phx-value-k={hx.key}
@@ -116,9 +126,9 @@ defmodule HexEmpireWeb.BoardComponents do
       </g>
       <polygon
         :for={hx <- @hexes}
-        :if={hx.shadow_points != nil}
+        :if={hx.type == :land}
         points={hx.shadow_points}
-        fill={hx.side_fill}
+        fill={hx.shadow_fill}
         style="pointer-events:none"
       />
       <g :for={hx <- @hexes} :if={hx.type == :land}>
