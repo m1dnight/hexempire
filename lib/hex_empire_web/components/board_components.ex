@@ -17,11 +17,14 @@ defmodule HexEmpireWeb.BoardComponents do
   @fh 40
   @xstep 37.5
 
+  # 2.5D: land tiles extrude downward by this many px (water stays flat/low).
+  @depth 6
+
   @doc "SVG viewBox width for the 20x11 board."
   def viewbox_w, do: 19 * @xstep + @fw
 
-  @doc "SVG viewBox height for the 20x11 board."
-  def viewbox_h, do: 11 * @fh + @fh / 2
+  @doc "SVG viewBox height for the 20x11 board (incl. tile extrusion depth)."
+  def viewbox_h, do: 11 * @fh + @fh / 2 + @depth + 2
 
   @doc """
   Precompute renderable hex data for a game.
@@ -35,12 +38,19 @@ defmodule HexEmpireWeb.BoardComponents do
     for key <- game.field_order do
       f = Map.fetch!(game.fields, key)
       {cx, cy} = position(f.x, f.y)
+      land? = f.type == :land
+      {top, side} = tile_style(f)
 
       %{
         key: key,
         cx: cx,
         cy: cy,
         points: hex_points(cx, cy),
+        shadow_points: hex_points(cx, cy + @depth),
+        shadow_fill: if(land?, do: side, else: "#2a5c8f"),
+        top_fill: top,
+        deco: deco(f),
+        wave_delay: unless(land?, do: "#{rem(:erlang.phash2({f.x, f.y, :wave}), 3900)}ms"),
         type: f.type,
         estate: f.estate,
         capital: f.capital,
@@ -85,16 +95,58 @@ defmodule HexEmpireWeb.BoardComponents do
   defp board_svg(assigns) do
     ~H"""
     <svg viewBox={"0 0 #{@vb_w} #{@vb_h}"} class="he-svg" preserveAspectRatio="xMidYMid meet">
-      <g :for={hx <- @hexes}>
+      <%!-- painter's layering: water floor -> land block shadows -> land tops.
+           The "coastline lip" is each land tile's own silhouette translated
+           down: joins are perfect by construction, and water needs no
+           internal borders so lakes read as one body. --%>
+      <%!-- water cross-section: visible only along the board's outer edge --%>
+      <polygon
+        :for={hx <- @hexes}
+        :if={hx.type == :water}
+        points={hx.shadow_points}
+        fill={hx.shadow_fill}
+        style="pointer-events:none"
+      />
+      <g :for={hx <- @hexes} :if={hx.type == :water}>
         <polygon
           points={hx.points}
-          fill={land_fill(hx)}
-          stroke={if hx.selected, do: "#ffe000", else: "#22301c"}
-          stroke-width={if hx.selected, do: "3.5", else: "1"}
+          fill={hx.top_fill}
+          stroke={hx.top_fill}
+          stroke-width="0.6"
           class="he-hex"
           phx-click="hex"
           phx-value-k={hx.key}
         />
+        <path
+          d={wave_path(hx.cx, hx.cy)}
+          class="he-wave"
+          style={"animation-delay:#{hx.wave_delay};pointer-events:none"}
+        />
+        <.army_token :if={hx.army != nil} hx={hx} viewer={@viewer} />
+      </g>
+      <polygon
+        :for={hx <- @hexes}
+        :if={hx.type == :land}
+        points={hx.shadow_points}
+        fill={hx.shadow_fill}
+        style="pointer-events:none"
+      />
+      <g :for={hx <- @hexes} :if={hx.type == :land}>
+        <polygon
+          points={hx.points}
+          fill={hx.top_fill}
+          stroke="#00000022"
+          stroke-width="0.8"
+          class="he-hex"
+          phx-click="hex"
+          phx-value-k={hx.key}
+        />
+        <.terrain :if={hx.deco != nil and hx.army == nil} hx={hx} />
+        <.settlement :if={hx.estate != nil} hx={hx} />
+        <.army_token :if={hx.army != nil} hx={hx} viewer={@viewer} />
+      </g>
+      <%!-- overlays last: reachable-glow and the selection outline --%>
+      <g :for={hx <- @hexes} :if={hx.valid or hx.selected} style="pointer-events:none">
         <polygon
           :if={hx.valid}
           points={hx.points}
@@ -114,10 +166,8 @@ defmodule HexEmpireWeb.BoardComponents do
           }
           stroke-width="2.5"
           class="he-glow"
-          style="pointer-events:none"
         />
-        <.settlement :if={hx.estate != nil} hx={hx} />
-        <.army_token :if={hx.army != nil} hx={hx} viewer={@viewer} />
+        <polygon :if={hx.selected} points={hx.points} fill="none" stroke="#ffe000" stroke-width="3.5" />
       </g>
     </svg>
     """
@@ -216,16 +266,83 @@ defmodule HexEmpireWeb.BoardComponents do
     |> Enum.map_join(" ", fn {x, y} -> "#{x},#{y}" end)
   end
 
-  defp land_fill(%{type: :water}), do: "#2e6da8"
-  defp land_fill(%{party: -1}), do: "#d8cfa8"
+  # ---------------------------------------------------------------------------
+  # 2.5D tile styling (all deterministic from coordinates — cosmetic only,
+  # NEVER touches the gameplay RNG)
+  # ---------------------------------------------------------------------------
 
-  defp land_fill(%{party: p}) do
-    %{
-      0 => "#e8b3b3",
-      1 => "#e3b3e3",
-      2 => "#aed2ea",
-      3 => "#b6e0b6"
-    }[p]
+  # {top-fill variants, side-fill} per owner; a coordinate hash picks the
+  # variant so the terrain has quiet texture instead of flat fills.
+  @water_tops ["#3f82c4", "#3d7fc0", "#4184c6"]
+  @tiles %{
+    -1 => {["#e3d9b0", "#dcd2a8", "#d6cb9f"], "#a5986e"},
+    0 => {["#eab5ac", "#e5aca2", "#efbeb5"], "#b0776d"},
+    1 => {["#e3aede", "#dda5d8", "#e9b8e4"], "#a973a4"},
+    2 => {["#adc4d8", "#a3bacf", "#b6cde0"], "#75909f"},
+    3 => {["#b2dcaa", "#a9d5a0", "#bce3b4"], "#7aa572"}
+  }
+
+  defp tile_style(%{type: :water} = f) do
+    {Enum.at(@water_tops, rem(:erlang.phash2({f.x, f.y, :tile}), 3)), nil}
+  end
+
+  defp tile_style(f) do
+    {tops, side} = Map.fetch!(@tiles, f.party)
+    {Enum.at(tops, rem(:erlang.phash2({f.x, f.y, :tile}), 3)), side}
+  end
+
+  # Terrain decoration on plain land: a hash sprinkles trees and hills.
+  defp deco(%{type: :land, estate: nil, capital: -1} = f) do
+    case rem(:erlang.phash2({f.x, f.y, :deco}), 100) do
+      r when r < 14 -> :trees
+      r when r < 22 -> :hill
+      _ -> nil
+    end
+  end
+
+  defp deco(_), do: nil
+
+  # Two small wave strokes; the CSS animation pulses their opacity.
+  defp wave_path(cx, cy) do
+    "M #{cx - 12} #{cy - 4} q 5 -4 10 0 M #{cx + 1} #{cy + 7} q 5 -4 10 0"
+  end
+
+  attr :hx, :map, required: true
+
+  defp terrain(assigns) do
+    ~H"""
+    <g style="pointer-events:none">
+      <%= if @hx.deco == :trees do %>
+        <line
+          x1={@hx.cx - 7}
+          y1={@hx.cy - 3}
+          x2={@hx.cx - 7}
+          y2={@hx.cy - 8}
+          stroke="#6b5334"
+          stroke-width="1.6"
+        />
+        <circle cx={@hx.cx - 7} cy={@hx.cy - 10} r="4" fill="#4a7c43" />
+        <line
+          x1={@hx.cx + 1}
+          y1={@hx.cy + 3}
+          x2={@hx.cx + 1}
+          y2={@hx.cy - 2}
+          stroke="#6b5334"
+          stroke-width="1.4"
+        />
+        <circle cx={@hx.cx + 1} cy={@hx.cy - 4} r="3.2" fill="#3e6b3a" />
+      <% else %>
+        <path
+          d={"M #{@hx.cx - 12} #{@hx.cy + 2} q 6 -9 12 0 Z"}
+          fill="#00000018"
+        />
+        <path
+          d={"M #{@hx.cx - 2} #{@hx.cy + 5} q 5 -7 10 0 Z"}
+          fill="#00000012"
+        />
+      <% end %>
+    </g>
+    """
   end
 
   # --- settlement icon: castle for towns/capitals, dock for ports ---
@@ -233,6 +350,7 @@ defmodule HexEmpireWeb.BoardComponents do
   defp settlement(assigns) do
     ~H"""
     <g style="pointer-events:none">
+      <ellipse cx={@hx.cx} cy={@hx.cy + 7} rx="12" ry="3.5" fill="#00000030" />
       <%= if @hx.estate == :port do %>
         <rect
           x={@hx.cx - 9}
@@ -313,11 +431,23 @@ defmodule HexEmpireWeb.BoardComponents do
   # --- army token: shield with count, morale pip below ---
 
   defp army_token(assigns) do
+    assigns = assign(assigns, chips: div(max(assigns.hx.army.count - 1, 0), 33))
+
     ~H"""
     <g
       style="pointer-events:none"
       opacity={if @hx.army.moved and @hx.army.party == @viewer, do: "0.55", else: "1"}
     >
+      <ellipse cx={@hx.cx} cy={@hx.cy + 17} rx="10.5" ry="3.2" fill="#00000038" />
+      <circle
+        :for={i <- @chips..1//-1}
+        cx={@hx.cx}
+        cy={@hx.cy + 6 + i * 2.5}
+        r="11"
+        fill={faction(@hx.army.party).dark}
+        stroke="#14200f"
+        stroke-width="1.2"
+      />
       <circle
         cx={@hx.cx}
         cy={@hx.cy + 6}
