@@ -207,3 +207,9 @@ select.he-sel { background:#3a5233; color:#eef2e6; border:none; border-radius:6p
 .he-zoomctl button:active { background:#3a5233; }
 .he-zoomreset { display:none !important; font-size:16px !important; }
 .he-zoomed .he-zoomreset { display:block !important; }
+
+/* 2.5D board: table vignette + water shimmer */
+.he-board { background: radial-gradient(120% 100% at 50% 30%, #2f4429 0%, #22331d 70%, #1b2917 100%); }
+.he-wave { fill: none; stroke: #ffffff55; stroke-width: 1.4; stroke-linecap: round;
+           animation: heWave 3.9s ease-in-out infinite; }
+@keyframes heWave { 0%, 100% { opacity: 0.1 } 50% { opacity: 0.55 } }
