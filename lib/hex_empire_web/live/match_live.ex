@@ -13,7 +13,16 @@ defmodule HexEmpireWeb.MatchLive do
   use HexEmpireWeb, :live_view
 
   import HexEmpireWeb.BoardComponents,
-    only: [board: 1, build_hexes: 4, faction: 1, action_bar: 1, base_url: 1, copy_link: 1]
+    only: [
+      board: 1,
+      build_hexes: 4,
+      build_armies: 2,
+      diff_effects: 2,
+      faction: 1,
+      action_bar: 1,
+      base_url: 1,
+      copy_link: 1
+    ]
 
   alias HexEmpire.{Engine, Matches}
   alias HexEmpire.Matches.Match
@@ -43,7 +52,8 @@ defmodule HexEmpireWeb.MatchLive do
            push_key: if(HexEmpire.Push.enabled?(), do: HexEmpire.Push.public_key()),
            push_state: :off,
            selected: nil,
-           valid_moves: []
+           valid_moves: [],
+           effects: []
          )
          |> assign_board()}
     end
@@ -149,6 +159,13 @@ defmodule HexEmpireWeb.MatchLive do
       match.status == :playing and my_turn?(match, socket.assigns.party) and
         socket.assigns.selected != nil
 
+    prev = socket.assigns.match
+
+    effects =
+      if prev != nil and prev.status == :playing and match.status == :playing,
+        do: diff_effects(prev.game, match.game),
+        else: []
+
     socket =
       if keep_selection? do
         assign(socket, match: match)
@@ -156,7 +173,24 @@ defmodule HexEmpireWeb.MatchLive do
         assign(socket, match: match, selected: nil, valid_moves: [])
       end
 
+    socket =
+      if effects == [] do
+        socket
+      else
+        version = (socket.assigns[:fx_version] || 0) + 1
+        Process.send_after(self(), {:clear_effects, version}, 900)
+        assign(socket, effects: effects, fx_version: version)
+      end
+
     {:noreply, assign_board(socket)}
+  end
+
+  def handle_info({:clear_effects, version}, socket) do
+    if socket.assigns[:fx_version] == version do
+      {:noreply, assign(socket, effects: [])}
+    else
+      {:noreply, socket}
+    end
   end
 
   # =========================================================================
@@ -165,7 +199,7 @@ defmodule HexEmpireWeb.MatchLive do
 
   defp assign_board(%{assigns: %{match: %Match{status: :playing, game: g}}} = socket) do
     %{selected: sel, valid_moves: valid, party: party} = socket.assigns
-    assign(socket, hexes: build_hexes(g, sel, valid, party))
+    assign(socket, hexes: build_hexes(g, sel, valid, party), armies: build_armies(g, party))
   end
 
   defp assign_board(socket), do: socket
@@ -305,7 +339,7 @@ defmodule HexEmpireWeb.MatchLive do
     ~H"""
     <div class="he-root">
       <div class="he-board">
-        <.board hexes={@hexes} viewer={@party} />
+        <.board hexes={@hexes} armies={@armies} effects={@effects} />
       </div>
 
       <.action_bar

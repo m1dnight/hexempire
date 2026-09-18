@@ -17,12 +17,21 @@ defmodule HexEmpireWeb.GameLive do
   use HexEmpireWeb, :live_view
 
   import HexEmpireWeb.BoardComponents,
-    only: [board: 1, build_hexes: 4, faction: 1, action_bar: 1, base_url: 1, copy_link: 1]
+    only: [
+      board: 1,
+      build_hexes: 4,
+      build_armies: 2,
+      diff_effects: 2,
+      faction: 1,
+      action_bar: 1,
+      base_url: 1,
+      copy_link: 1
+    ]
 
   alias HexEmpire.{Campaigns, Engine}
 
   # AI step cadence in ms (test config sets 1 so suites don't wait out timers)
-  @ai_delay Application.compile_env(:hex_empire, :ai_delay, 220)
+  @ai_delay Application.compile_env(:hex_empire, :ai_delay, 300)
 
   @impl true
   def mount(_params, session, socket) do
@@ -42,6 +51,7 @@ defmodule HexEmpireWeb.GameLive do
             difficulty: difficulty,
             selected: nil,
             valid_moves: [],
+            effects: [],
             status_msg: resume_status(game)
           )
           |> assign_board()
@@ -78,6 +88,7 @@ defmodule HexEmpireWeb.GameLive do
       difficulty: campaign.difficulty,
       selected: nil,
       valid_moves: [],
+      effects: [],
       status_msg: "Your move, commander."
     )
     |> assign_board()
@@ -116,7 +127,8 @@ defmodule HexEmpireWeb.GameLive do
 
       {:noreply,
        socket
-       |> assign(game: g, selected: nil, valid_moves: [])
+       |> assign_game(g)
+       |> assign(selected: nil, valid_moves: [])
        |> assign_board()
        |> maybe_schedule_ai()}
     else
@@ -140,6 +152,14 @@ defmodule HexEmpireWeb.GameLive do
   # =========================================================================
 
   @impl true
+  def handle_info({:clear_effects, version}, socket) do
+    if socket.assigns[:fx_version] == version do
+      {:noreply, assign(socket, effects: [])}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_info(:ai_step, socket) do
     g = socket.assigns.game
 
@@ -152,7 +172,7 @@ defmodule HexEmpireWeb.GameLive do
 
       true ->
         %{game: g} = Campaigns.ai_step(campaign(socket))
-        socket = socket |> assign(game: g) |> assign_board()
+        socket = socket |> assign_game(g) |> assign_board()
 
         if g.winner == nil and g.turn_party != g.human do
           Process.send_after(self(), :ai_step, @ai_delay)
@@ -191,7 +211,8 @@ defmodule HexEmpireWeb.GameLive do
         {%{game: g}, _moved?} = Campaigns.human_move(campaign(socket), sel, key)
 
         socket
-        |> assign(game: g, selected: nil, valid_moves: [])
+        |> assign_game(g)
+        |> assign(selected: nil, valid_moves: [])
         |> assign(status_msg: if(g.winner, do: winner_text(g), else: status_after_move(g)))
         |> assign_board()
         |> maybe_schedule_ai()
@@ -242,7 +263,22 @@ defmodule HexEmpireWeb.GameLive do
 
   defp assign_board(socket) do
     %{game: g, selected: sel, valid_moves: valid} = socket.assigns
-    assign(socket, hexes: build_hexes(g, sel, valid, g.human))
+    assign(socket, hexes: build_hexes(g, sel, valid, g.human), armies: build_armies(g, g.human))
+  end
+
+  # Swap in an updated game, emitting transient board effects from the diff
+  # (a version guard stops an old sweep timer from clearing newer effects).
+  defp assign_game(socket, g) do
+    effects = diff_effects(socket.assigns[:game], g)
+    socket = assign(socket, game: g)
+
+    if effects == [] do
+      socket
+    else
+      version = (socket.assigns[:fx_version] || 0) + 1
+      Process.send_after(self(), {:clear_effects, version}, 900)
+      assign(socket, effects: effects, fx_version: version)
+    end
   end
 
   # =========================================================================
@@ -278,7 +314,7 @@ defmodule HexEmpireWeb.GameLive do
     ~H"""
     <div class="he-root">
       <div class="he-board">
-        <.board hexes={@hexes} viewer={@game.human} />
+        <.board hexes={@hexes} armies={@armies} effects={@effects} />
       </div>
 
       <.action_bar
